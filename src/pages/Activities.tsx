@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import AppBar from '../components/AppBar';
+import AppBar, { AppBarAction } from '../components/AppBar';
+import { useImport } from '../components/ImportContext';
 import { useState } from 'react';
 import ActivityCard from '../components/ActivityCard';
 import type { Activity, Sport } from '../lib/analysis/types';
@@ -15,6 +16,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 ];
 
 export default function Activities() {
+  const { openPicker } = useImport();
   const [filter, setFilter] = useState<Filter>(() => {
     try { return (sessionStorage.getItem('filter') as Filter) ?? 'all'; } catch { return 'all'; }
   });
@@ -46,7 +48,7 @@ export default function Activities() {
 
   return (
     <div className="space-y-4">
-      <AppBar title="Séances" subtitle={weekSummary} />
+      <AppBar title="Séances" subtitle={weekSummary} actions={<AppBarAction icon="plus" label="Importer des séances" onClick={openPicker} />} />
       <div className="flex gap-2" role="tablist">
         {FILTERS.map((f) => (
           <button

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { SportBadge } from '../components/ActivityCard';
 import AppBar, { AppBarAction } from '../components/AppBar';
 import Icon from '../components/Icon';
+import { useImport } from '../components/ImportContext';
 import Markdown from '../components/Markdown';
 import { db, getSettings, type ChatMessage } from '../lib/db';
 import { activityTitle, fmtDistance } from '../lib/format';
@@ -172,6 +173,7 @@ function UserBubble({ m }: { m: ChatMessage }) {
 }
 
 function Composer({ disabled, busy }: { disabled: boolean; busy: boolean }) {
+  const { openPicker } = useImport();
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
   // Hauteur automatique (5 lignes maximum).
@@ -193,7 +195,11 @@ function Composer({ disabled, busy }: { disabled: boolean; busy: boolean }) {
 
   return (
     <div className="composer fixed inset-x-0 z-30 px-3">
-      <div className="mx-auto flex max-w-2xl items-end gap-2 rounded-3xl bg-white/90 p-1.5 pl-4 shadow-lg ring-1 ring-slate-200/80 backdrop-blur-xl dark:bg-slate-900/90 dark:ring-slate-700/80">
+      <div className="mx-auto flex max-w-2xl items-end gap-1.5 rounded-3xl bg-white/90 p-1.5 shadow-lg ring-1 ring-slate-200/80 backdrop-blur-xl dark:bg-slate-900/90 dark:ring-slate-700/80">
+        <button onClick={() => { navigator.vibrate?.(8); openPicker(); }} aria-label="Importer des séances"
+          className="grid size-10 shrink-0 place-items-center rounded-full bg-slate-100 text-accent transition-transform active:scale-90 dark:bg-slate-800">
+          <Icon name="plus" className="size-5" />
+        </button>
         <textarea
           ref={ref}
           rows={1}

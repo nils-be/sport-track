@@ -6,6 +6,7 @@ import AppBar from '../components/AppBar';
 import { ChartCarousel, runSlides, swimSlides } from '../components/Charts';
 import DebriefCard from '../components/DebriefCard';
 import Icon from '../components/Icon';
+import RouteMap from '../components/RouteMap';
 import ZoneBars from '../components/ZoneBars';
 import type { Activity, RunningAnalysis, SwimmingAnalysis } from '../lib/analysis/types';
 import { db, deleteActivity } from '../lib/db';
@@ -45,6 +46,10 @@ export default function ActivityDetail() {
         title={<span className="flex items-center gap-2"><SportBadge sport={a.sport} className="size-7" />{activityTitle(a)}</span>}
         subtitle={`${fmtDateLong(a.startTime)} · ${fmtTime(a.startTime)}`}
       />
+
+      {a.route && a.route.length > 1 && (
+        <div className="card overflow-hidden"><RouteMap route={a.route} height={210} /></div>
+      )}
 
       <KeyStats a={a} />
 

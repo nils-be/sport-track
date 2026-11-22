@@ -168,6 +168,8 @@ export interface Activity {
   running?: RunningAnalysis;
   swimming?: SwimmingAnalysis;
   extras: Extras;
+  /** Parcours GPS simplifié [lat, lon] (stocké seulement sur l'appareil), ou null sans GPS. */
+  route?: [number, number][] | null;
   /** Version de l'algorithme d'analyse, pour pouvoir réanalyser plus tard. */
   analysisVersion: number;
 }

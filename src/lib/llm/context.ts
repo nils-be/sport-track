@@ -4,6 +4,7 @@ import type { Activity, RunLap } from '../analysis/types';
 import type { DebriefContent } from '../db';
 import { fmtDuration, fmtPace, LAP_KIND_LABEL, STROKE_LABEL, VARIANT_LABEL } from '../format';
 import { addWeeks, DAY, weekStart } from '../stats';
+import { effortBlockData } from '../analysis/summary';
 
 const r1 = (x: number) => Math.round(x * 10) / 10;
 const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -91,22 +92,12 @@ export function sessionDetail(a: Activity) {
   };
 }
 
-/** Regroupe les efforts consécutifs de distance voisine : « 12 × 306 m à 3:36/km (FC 168) ». */
+/** Regroupe les efforts consécutifs de distance voisine : « 12 × 306 m à 3:36/km (de 3:42 à 3:18), FC moy 168 ». */
 export function effortBlocks(laps: RunLap[]): string[] {
-  const blocks: RunLap[][] = [];
-  for (const l of laps.filter((x) => x.kind === 'effort')) {
-    const cur = blocks[blocks.length - 1];
-    if (cur && Math.abs(l.distanceM - cur[0].distanceM) <= 0.25 * cur[0].distanceM) cur.push(l);
-    else blocks.push([l]);
-  }
-  return blocks.map((b) => {
-    const d = b.reduce((s, l) => s + l.distanceM, 0), t = b.reduce((s, l) => s + l.durationS, 0);
-    const hrs = b.filter((l) => l.avgHr).map((l) => l.avgHr!);
-    const avgD = d / b.length;
-    const dist = avgD >= 950 ? `${r2(avgD / 1000)} km` : `${Math.round(avgD)} m`;
-    const paces = b.map((l) => l.paceSPerKm).filter((p): p is number => p != null);
-    const range = b.length > 1 && paces.length ? ` (de ${fmtPace(Math.max(...paces))} à ${fmtPace(Math.min(...paces))})` : '';
-    return `${b.length} × ${dist} à ${fmtPace((t / d) * 1000)}/km${range}${hrs.length ? `, FC moy ${Math.round(hrs.reduce((s, x) => s + x, 0) / hrs.length)}` : ''}`;
+  return effortBlockData(laps).map((b) => {
+    const dist = b.distanceM >= 950 ? `${r2(b.distanceM / 1000)} km` : `${Math.round(b.distanceM)} m`;
+    const range = b.slowestPace != null ? ` (de ${fmtPace(b.slowestPace)} à ${fmtPace(b.fastestPace)})` : '';
+    return `${b.count} × ${dist} à ${fmtPace(b.paceSPerKm)}/km${range}${b.avgHr ? `, FC moy ${b.avgHr}` : ''}`;
   });
 }
 

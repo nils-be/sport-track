@@ -1,6 +1,7 @@
 import type { FitMessages } from '../fit/decode';
 import { computeHrZones, deviceName, hrSamples, ms, num, round, type ZoneSettings } from './common';
 import { analyzeRunning, runPoints } from './running';
+import { extractRoute } from './route';
 import { analyzeSwimming } from './swimming';
 import type { Activity, ActivityStreams, Extras, Sport } from './types';
 import { ANALYSIS_VERSION } from './version';
@@ -73,6 +74,7 @@ export function analyzeFit(messages: FitMessages, zoneSettings: ZoneSettings): A
     calories: num(session.totalCalories),
     hrZones,
     extras,
+    route: extractRoute(messages),
     analysisVersion: ANALYSIS_VERSION,
   };
 

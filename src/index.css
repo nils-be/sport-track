@@ -154,3 +154,22 @@ body[data-typing] .composer { bottom: calc(env(safe-area-inset-bottom) + 0.5rem)
 .recharts-surface:focus {
   outline: none;
 }
+
+/* Fond de carte en mode sombre : tuiles inversées et adoucies. */
+@media (prefers-color-scheme: dark) {
+  .map-tiles {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.85) saturate(0.6);
+  }
+}
+
+/* Changement d'onglet : l'écran arrive du côté du geste. */
+@keyframes from-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+.page-from-right { animation: from-right 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.page-from-left { animation: from-left 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }

@@ -13,6 +13,27 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 export const SHARE_CACHE = 'shared-files';
 
+// Tuiles de carte OpenStreetMap : cache local (consultation hors ligne), limité pour rester sobre.
+const TILE_CACHE = 'osm-tiles';
+const MAX_TILES = 600;
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== 'GET' || url.hostname !== 'tile.openstreetmap.org') return;
+  event.respondWith((async () => {
+    const cache = await caches.open(TILE_CACHE);
+    const hit = await cache.match(event.request);
+    if (hit) return hit;
+    const res = await fetch(event.request);
+    if (res.ok) {
+      await cache.put(event.request, res.clone());
+      const keys = await cache.keys();
+      if (keys.length > MAX_TILES) await Promise.all(keys.slice(0, keys.length - MAX_TILES).map((k) => cache.delete(k)));
+    }
+    return res;
+  })());
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'POST' || !url.pathname.endsWith('/share-target')) return;

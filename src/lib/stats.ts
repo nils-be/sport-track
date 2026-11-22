@@ -69,3 +69,53 @@ export function records(acts: Activity[], sport: Sport): RecordEntry[] {
 export function longest(acts: Activity[], sport: Sport): Activity | null {
   return acts.filter((a) => a.sport === sport).reduce<Activity | null>((m, a) => (!m || a.distanceM > m.distanceM ? a : m), null);
 }
+
+// ───────────────────────────────────────────────────────────── Prédicteur de performances
+
+/** Exposant de fatigue de Riegel : T2 = T1 × (D2 / D1)^1,06. */
+export const RIEGEL_EXPONENT = 1.06;
+
+export const PREDICT_TARGETS: Record<Sport, number[]> = {
+  running: [5000, 10000, 21097, 42195],
+  swimming: [100, 350, 500, 1000],
+};
+
+export interface Effort { distanceM: number; durationS: number }
+
+/** Meilleurs efforts (par distance) des séances d'un sport dans [from, to[. */
+export function effortsBetween(acts: Activity[], sport: Sport, from: number, to: number): Effort[] {
+  const out: Effort[] = [];
+  for (const a of acts) {
+    if (a.sport !== sport || a.startTime < from || a.startTime >= to) continue;
+    out.push(...((sport === 'running' ? a.running?.bestEfforts : a.swimming?.bestEfforts) ?? []));
+  }
+  return out;
+}
+
+/**
+ * Temps prédit sur `target` mètres à partir d'efforts réalisés (formule de Riegel).
+ * Seuls les efforts d'au moins 1/5 de la distance visée servent (un 1 km ne prédit pas un marathon) ;
+ * à défaut, on prend l'effort le plus long. On garde la meilleure prédiction.
+ */
+export function predictTime(efforts: Effort[], target: number): { durationS: number; from: Effort } | null {
+  if (!efforts.length) return null;
+  const usable = efforts.filter((e) => e.distanceM >= target / 5);
+  const longest = efforts.reduce((m, e) => (e.distanceM > m.distanceM ? e : m));
+  let best: { durationS: number; from: Effort } | null = null;
+  for (const e of usable.length ? usable : [longest]) {
+    const t = e.durationS * (target / e.distanceM) ** RIEGEL_EXPONENT;
+    if (!best || t < best.durationS) best = { durationS: t, from: e };
+  }
+  return best;
+}
+
+/** Évolution hebdomadaire de la prédiction (fenêtre glissante de `windowWeeks`, limitée à la période). */
+export function predictionSeries(acts: Activity[], sport: Sport, target: number, weeks: number, windowWeeks = 6, now = Date.now()) {
+  const periodStart = addWeeks(weekStart(now), -(weeks - 1));
+  return weeklyVolumes([], sport, weeks, now).map((w) => {
+    const end = addWeeks(w.start, 1);
+    const from = Math.max(periodStart, addWeeks(end, -windowWeeks));
+    const p = predictTime(effortsBetween(acts, sport, from, end), target);
+    return { start: w.start, durationS: p ? Math.round(p.durationS) : null };
+  });
+}
