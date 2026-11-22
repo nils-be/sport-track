@@ -158,7 +158,8 @@ body[data-typing] .composer { bottom: calc(env(safe-area-inset-bottom) + 0.5rem)
 /* Fond de carte en mode sombre : tuiles inversées et adoucies. */
 @media (prefers-color-scheme: dark) {
   .map-tiles {
-    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.85) saturate(0.6);
+    /* Légère atténuation seulement : la carte reste claire et lisible. */
+    filter: brightness(0.88) contrast(0.95) saturate(0.85);
   }
 }
 
@@ -173,3 +174,13 @@ body[data-typing] .composer { bottom: calc(env(safe-area-inset-bottom) + 0.5rem)
 }
 .page-from-right { animation: from-right 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 .page-from-left { animation: from-left 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+
+/* Balayage progressif entre onglets (le transform n'existe que pendant le geste). */
+body[data-swiping] .swipe-page {
+  transform: translateX(var(--swipe-x, 0px));
+  opacity: var(--swipe-o, 1);
+  will-change: transform;
+}
+body[data-swiping]:not([data-swipe-anim]) .nav-pill { transition: none; }
+body[data-swipe-anim] .swipe-page { transition: transform 210ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 210ms ease; }
+body[data-swiping] { overflow-x: hidden; }
