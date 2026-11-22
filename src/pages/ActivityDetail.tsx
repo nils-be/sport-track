@@ -51,7 +51,7 @@ export default function ActivityDetail() {
       <DebriefCard activityId={a.id} />
 
       {streams && a.running && <ChartCarousel slides={runSlides(streams)} />}
-      {a.swimming && <ChartCarousel slides={swimSlides(a.swimming.lengths)} />}
+      {a.swimming && <ChartCarousel slides={swimSlides(a.swimming)} />}
 
       {a.running && <RunTabs a={a} r={a.running} />}
       {a.swimming && <SwimTabs a={a} s={a.swimming} />}

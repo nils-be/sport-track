@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
-import type { ActivityStreams, SwimLength } from '../lib/analysis/types';
+import type { ActivityStreams, SwimmingAnalysis, SwimSet } from '../lib/analysis/types';
 import { fmtDuration, fmtPace, STROKE_LABEL } from '../lib/format';
 
 export const AXIS = { fontSize: 11, fill: 'currentColor' };
@@ -121,22 +121,17 @@ const hint = <p className="muted mt-1 text-center text-[11px]">Touche le graphiq
 
 // ───────────────────────────────────────────────────────────── Course
 
-interface RunPoint { x: number; t: number; pace: number | null; hr: number | null; alt: number | null }
+interface RunPoint { x: number; t: number; dist: number | null; pace: number | null; hr: number | null; alt: number | null }
 
-/** Série allégée : ~120 tranches moyennées (vitesse, FC, altitude), sur la distance ou le temps. */
+/** Série allégée : ~120 tranches de temps moyennées (vitesse, FC, altitude). Abscisse = temps écoulé (minutes). */
 function runSeries(streams: ActivityStreams) {
-  const byDistance = streams.distanceM.some((d) => d != null && d > 0);
-  const xs = streams.t.map((t, i) => (byDistance ? (streams.distanceM[i] ?? null) : t));
-  const valid = xs.filter((x): x is number => x != null);
-  const x0 = Math.min(...valid), x1 = Math.max(...valid);
-  const step = (x1 - x0) / MAX_POINTS || 1;
-  const buckets: { x: number; t: number[]; sp: number[]; hr: number[]; alt: number[] }[] = [];
+  const t0 = streams.t[0] ?? 0, t1 = streams.t[streams.t.length - 1] ?? 0;
+  const step = (t1 - t0) / MAX_POINTS || 1;
+  const buckets: { t: number; dist: number | null; sp: number[]; hr: number[]; alt: number[] }[] = [];
   for (let i = 0; i < streams.t.length; i++) {
-    const x = xs[i];
-    if (x == null) continue;
-    const k = Math.min(MAX_POINTS - 1, Math.floor((x - x0) / step));
-    const b = (buckets[k] ??= { x: x0 + (k + 0.5) * step, t: [], sp: [], hr: [], alt: [] });
-    b.t.push(streams.t[i]);
+    const k = Math.min(MAX_POINTS - 1, Math.floor((streams.t[i] - t0) / step));
+    const b = (buckets[k] ??= { t: t0 + (k + 0.5) * step, dist: null, sp: [], hr: [], alt: [] });
+    if (streams.distanceM[i] != null) b.dist = streams.distanceM[i];
     if (streams.speedMs[i] != null) b.sp.push(streams.speedMs[i]!);
     if (streams.hr[i] != null) b.hr.push(streams.hr[i]!);
     if (streams.altitudeM[i] != null) b.alt.push(streams.altitudeM[i]!);
@@ -145,15 +140,22 @@ function runSeries(streams: ActivityStreams) {
   const pts: RunPoint[] = buckets.filter(Boolean).map((b) => {
     const sp = avg(b.sp);
     return {
-      x: byDistance ? b.x / 1000 : b.x / 60,
-      t: b.t[0],
+      x: b.t / 60,
+      t: b.t,
+      dist: b.dist,
       pace: sp != null && sp > 1.2 ? 1000 / sp : null,
       hr: b.hr.length ? Math.round(avg(b.hr)!) : null,
       alt: b.alt.length ? Math.round(avg(b.alt)! * 10) / 10 : null,
     };
   });
-  return { pts, byDistance };
+  return { pts };
 }
+
+/** Minutes → « 25′ », « 1h05 ». */
+const fmtMinutes = (m: number) => {
+  const r = Math.round(m);
+  return r >= 60 ? `${Math.floor(r / 60)}h${String(r % 60).padStart(2, '0')}` : `${r}′`;
+};
 
 export function runSlides(streams: ActivityStreams): Slide[] {
   return [
@@ -170,7 +172,7 @@ const RUN_METRIC = {
 } as const;
 
 function RunMetricChart({ streams, metric, visible }: { streams: ActivityStreams; metric: 'pace' | 'hr' | 'alt'; visible: boolean }) {
-  const { pts, byDistance } = useMemo(() => runSeries(streams), [streams]);
+  const { pts } = useMemo(() => runSeries(streams), [streams]);
   const scrub = useChartScrub(visible, pickNumeric(pts.map((p) => p.x)));
   const { color, unit } = RUN_METRIC[metric];
   const values = pts.map((p) => p[metric]).filter((v): v is number => v != null);
@@ -203,7 +205,7 @@ function RunMetricChart({ streams, metric, visible }: { streams: ActivityStreams
         summary={summary}
         reading={p && (
           <>
-            <span className="muted">{byDistance ? `${p.x.toFixed(1).replace('.', ',')} km` : `${Math.round(p.x)} min`} · {fmtDuration(p.t)}</span>
+            <span className="muted">{fmtDuration(p.t)}{p.dist != null ? ` · ${(p.dist / 1000).toFixed(2).replace('.', ',')} km` : ''}</span>
             <Val color={color}>{p[metric] != null ? fmt(p[metric]!) : metric === 'pace' ? 'arrêt / marche' : '–'}</Val>
           </>
         )}
@@ -217,8 +219,7 @@ function RunMetricChart({ streams, metric, visible }: { streams: ActivityStreams
             </linearGradient>
           </defs>
           {grid}
-          <XAxis dataKey="x" type="number" domain={['dataMin', 'dataMax']} tick={AXIS} tickLine={false}
-            tickFormatter={(v: number) => (byDistance ? `${Math.round(v)}` : `${Math.round(v)}′`)} unit={byDistance ? ' km' : ''} />
+          <XAxis dataKey="x" type="number" domain={['dataMin', 'dataMax']} tick={AXIS} tickLine={false} tickFormatter={fmtMinutes} minTickGap={24} />
           <YAxis reversed={metric === 'pace'} domain={domain} allowDataOverflow tick={AXIS} tickLine={false} axisLine={false} width={42}
             tickFormatter={(v: number) => (metric === 'pace' ? fmtPace(v) : `${v}`)} />
           {avg != null && <ReferenceLine y={avg} stroke={color} strokeDasharray="4 4" strokeOpacity={0.6} />}
@@ -235,34 +236,37 @@ function RunMetricChart({ streams, metric, visible }: { streams: ActivityStreams
 // ───────────────────────────────────────────────────────────── Natation
 
 const STROKE_COLOR: Record<string, string> = {
+  mixed: '#f59e0b',
   freestyle: 'var(--color-swim)',
   breaststroke: '#a855f7',
   backstroke: '#14b8a6',
   butterfly: '#f43f5e',
 };
 
-export function swimSlides(lengths: SwimLength[]): Slide[] {
-  const active = lengths.filter((l) => l.active);
-  if (!active.length) return [];
+/** Natation : une barre par série (circuit) — allure, SWOLF et FC. */
+export function swimSlides(swim: SwimmingAnalysis): Slide[] {
+  const sets = swim.sets.filter((x) => x.kind === 'swim');
+  if (!sets.length) return [];
   return [
-    { title: 'Allure par longueur', render: (v) => <SwimMetricChart lengths={active} metric="pace" visible={v} /> },
-    ...(active.some((l) => l.swolf != null) ? [{ title: 'SWOLF par longueur', render: (v: boolean) => <SwimMetricChart lengths={active} metric="swolf" visible={v} /> }] : []),
-    ...(active.some((l) => l.avgHr != null) ? [{ title: 'FC par longueur', render: (v: boolean) => <SwimMetricChart lengths={active} metric="hr" visible={v} /> }] : []),
+    { title: 'Allure par série', render: (v) => <SwimSetChart sets={sets} metric="pace" visible={v} /> },
+    ...(sets.some((x) => x.swolf != null) ? [{ title: 'SWOLF par série', render: (v: boolean) => <SwimSetChart sets={sets} metric="swolf" visible={v} /> }] : []),
+    ...(sets.some((x) => x.avgHr != null) ? [{ title: 'FC par série', render: (v: boolean) => <SwimSetChart sets={sets} metric="hr" visible={v} /> }] : []),
   ];
 }
 
-function SwimMetricChart({ lengths, metric, visible }: { lengths: SwimLength[]; metric: 'pace' | 'swolf' | 'hr'; visible: boolean }) {
-  const scrub = useChartScrub(visible, pickCategory(lengths.length));
-  const data = lengths.map((l, i) => ({
-    n: i + 1, stroke: l.stroke ?? 'unknown', suspect: l.suspect, dur: l.durationS,
-    v: metric === 'pace' ? l.pace100S : metric === 'swolf' ? l.swolf : l.avgHr,
+function SwimSetChart({ sets, metric, visible }: { sets: SwimSet[]; metric: 'pace' | 'swolf' | 'hr'; visible: boolean }) {
+  const scrub = useChartScrub(visible, pickCategory(sets.length));
+  const data = sets.map((x, i) => ({
+    n: i + 1, stroke: x.stroke ?? 'unknown', dist: x.distanceM, dur: x.durationS, pace: x.pace100S,
+    v: metric === 'pace' ? x.pace100S : metric === 'swolf' ? x.swolf : x.avgHr,
   }));
-  const values = data.filter((d) => !d.suspect).map((d) => d.v).filter((v): v is number => v != null);
+  const values = data.map((d) => d.v).filter((v): v is number => v != null);
   const lo = values.length ? Math.max(0, Math.floor((Math.min(...values) * 0.85) / 5) * 5) : 0;
   const avg = values.length ? values.reduce((a, c) => a + c, 0) / values.length : null;
   const strokes = [...new Set(data.map((d) => d.stroke))];
   const p = scrub.index != null ? data[scrub.index] : null;
   const fmt = (v: number) => (metric === 'pace' ? `${fmtPace(v)} /100 m` : metric === 'hr' ? `${v} bpm` : `${v}`);
+  const color = (stroke: string) => (metric === 'hr' ? 'var(--color-z5)' : STROKE_COLOR[stroke] ?? '#64748b');
 
   return (
     <div {...scrub.wrapperProps} className="text-slate-500 dark:text-slate-400">
@@ -270,11 +274,11 @@ function SwimMetricChart({ lengths, metric, visible }: { lengths: SwimLength[]; 
         onClear={scrub.clear}
         summary={metric === 'hr' || strokes.length < 2
           ? <>Moyenne {avg != null ? fmt(Math.round(avg)) : '–'}{metric !== 'hr' && <span>· plus bas = mieux</span>}</>
-          : strokes.map((s) => <Val key={s} color={STROKE_COLOR[s] ?? '#64748b'}>{STROKE_LABEL[s as keyof typeof STROKE_LABEL]}</Val>)}
+          : strokes.map((st) => <Val key={st} color={color(st)}>{STROKE_LABEL[st as keyof typeof STROKE_LABEL]}</Val>)}
         reading={p && (
           <>
-            <span className="muted">Longueur {p.n} · {STROKE_LABEL[p.stroke as keyof typeof STROKE_LABEL]}{p.suspect ? ' · suspecte' : ''}</span>
-            <Val color={metric === 'hr' ? 'var(--color-z5)' : STROKE_COLOR[p.stroke] ?? '#64748b'}>{p.v != null ? fmt(p.v) : '–'}</Val>
+            <span className="muted">Série {p.n} · {p.dist} m {STROKE_LABEL[p.stroke as keyof typeof STROKE_LABEL]?.toLowerCase()}</span>
+            <Val color={color(p.stroke)}>{p.v != null ? fmt(p.v) : '–'}</Val>
             <span>{fmtDuration(p.dur)}</span>
           </>
         )}
@@ -282,20 +286,18 @@ function SwimMetricChart({ lengths, metric, visible }: { lengths: SwimLength[]; 
       <ResponsiveContainer width="100%" height={CHART_H}>
         <BarChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: -8 }}>
           {grid}
-          <XAxis dataKey="n" tick={AXIS} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
+          <XAxis dataKey="n" tick={AXIS} tickLine={false} interval={0} />
           <YAxis domain={[lo, 'auto']} tick={AXIS} tickLine={false} axisLine={false} width={42}
             tickFormatter={(v: number) => (metric === 'pace' ? fmtPace(v) : `${Math.round(v)}`)} />
           {avg != null && <ReferenceLine y={avg} stroke="currentColor" strokeDasharray="4 4" strokeOpacity={0.5} />}
-          <Bar dataKey="v" radius={[3, 3, 0, 0]} isAnimationActive={visible} animationDuration={500}>
+          <Bar dataKey="v" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={visible} animationDuration={500}>
             {data.map((d, i) => (
-              <Cell key={i} fill={metric === 'hr' ? 'var(--color-z5)' : STROKE_COLOR[d.stroke] ?? '#64748b'}
-                fillOpacity={d.suspect ? 0.25 : scrub.index == null || scrub.index === i ? 0.85 : 0.4} />
+              <Cell key={i} fill={color(d.stroke)} fillOpacity={scrub.index == null || scrub.index === i ? 0.85 : 0.4} />
             ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      {hint}
+      <p className="muted mt-1 text-center text-[11px]">Une barre par série · touche une barre pour le détail</p>
     </div>
   );
 }
-

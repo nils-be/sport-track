@@ -1,6 +1,6 @@
 // Chat de suivi avec le coach : un seul fil, qui contient aussi les débriefs.
 import { db, getSettings, type DebriefContent } from '../db';
-import { currentNotebook, MAX_WORDS, saveNotebook, wordCount } from '../notebook';
+import { currentNotebook, MAX_WORDS, normalizeNotebook, NOTEBOOK_STRUCTURE_PROMPT, saveNotebook, wordCount } from '../notebook';
 import { DAY } from '../stats';
 import { messageForLlm, recentMessages } from '../thread';
 import { recentStats, sessionDetail, sessionShort } from './context';
@@ -23,7 +23,8 @@ Ton style :
 - Pose une question de suivi quand une information te manque (par exemple, où sont les courbatures).
 - Lisible sur un téléphone : réponses courtes à moyennes, en markdown simple (paragraphes, **gras**, listes à puces, titres ### si la réponse est longue). Pas de tableaux, pas de LaTeX ni de formules : écris « 4 × 1 000 m à 3:58/km ».
 
-Le carnet du coach est ta mémoire durable. Dans "carnet", renvoie sa nouvelle version complète uniquement si l'échange apporte une information durable (douleur ou blessure, fatigue, objectif, disponibilités, séance déplacée, préférence) ; sinon renvoie null. Garde sa structure par rubriques, date brièvement les ajouts et ne dépasse pas ${MAX_WORDS} mots.
+Le carnet du coach est ta mémoire durable. Dans "carnet", renvoie sa nouvelle version complète uniquement si l'échange apporte une information durable (douleur ou blessure, fatigue, objectif, disponibilités, séance déplacée, préférence) ; sinon renvoie null. Ne dépasse pas ${MAX_WORDS} mots. Range chaque information dans la bonne rubrique (disponibilités, préférences, santé, forme du moment…).
+${NOTEBOOK_STRUCTURE_PROMPT}
 
 Réponds uniquement avec l'objet JSON demandé : "reponse" (ton message, en markdown) et "carnet" (texte complet ou null).`;
 
@@ -127,7 +128,7 @@ async function respond(coachId: number): Promise<void> {
 
     // Carnet : seulement si le coach l'a mis à jour et que l'utilisateur ne l'a pas modifié entre-temps.
     const latest = await currentNotebook();
-    if (parsed.carnet && latest.id === notebook.id && parsed.carnet !== notebook.text && wordCount(parsed.carnet) <= MAX_WORDS * 1.3) {
+    if (parsed.carnet && latest.id === notebook.id && normalizeNotebook(parsed.carnet) !== notebook.text && wordCount(parsed.carnet) <= MAX_WORDS * 1.3) {
       await saveNotebook(parsed.carnet, 'coach');
     }
   } catch (e) {

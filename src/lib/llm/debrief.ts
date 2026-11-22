@@ -1,5 +1,5 @@
 import { db, getSettings, type DebriefContent } from '../db';
-import { currentNotebook, MAX_WORDS, saveNotebook, wordCount } from '../notebook';
+import { currentNotebook, MAX_WORDS, normalizeNotebook, saveNotebook, wordCount } from '../notebook';
 import { debriefToMarkdown, recentConversationLines, upsertDebriefMessage } from '../thread';
 import { buildDebriefInput } from './context';
 import { estimateCost, type Provider } from './models';
@@ -71,7 +71,7 @@ export async function generateDebrief(activityId: string): Promise<void> {
 
     // Carnet : on n'écrase pas une modification faite par l'utilisateur pendant l'appel.
     const latest = await currentNotebook();
-    if (parsed.carnet && latest.id === notebook.id && parsed.carnet !== notebook.text && wordCount(parsed.carnet) <= MAX_WORDS * 1.3) {
+    if (parsed.carnet && latest.id === notebook.id && normalizeNotebook(parsed.carnet) !== notebook.text && wordCount(parsed.carnet) <= MAX_WORDS * 1.3) {
       await saveNotebook(parsed.carnet, 'coach', activityId);
     }
   } catch (e) {
