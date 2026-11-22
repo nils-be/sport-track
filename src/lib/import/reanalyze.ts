@@ -16,7 +16,7 @@ export async function reanalyzeAll(onProgress?: (done: number, total: number) =>
         const { activity, streams } = analyzeFit(decodeFit(f.bytes), settings.zones);
         await db.transaction('rw', db.activities, db.streams, async () => {
           // Les corrections manuelles de distance sont réappliquées après la réanalyse.
-          await db.activities.put(applyCorrections({ ...activity, id, importedAt: prev.importedAt }, prev.corrections));
+          await db.activities.put(applyCorrections({ ...activity, id, importedAt: prev.importedAt, place: prev.place }, prev.corrections));
           if (streams) await db.streams.put({ ...streams, activityId: id });
         });
       } catch (e) {

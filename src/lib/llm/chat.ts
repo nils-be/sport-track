@@ -20,6 +20,7 @@ Ton style :
 - Très concret : jours, allures (min/km ou /100 m), zones, cadence, structure des séances (échauffement, corps de séance, récupération, retour au calme), hydratation et récupération quand c'est utile.
 - Tu peux réorganiser les prochains jours (décaler une séance, alléger, garder 48 h entre deux efforts intenses) en l'expliquant brièvement.
 - Appuie-toi sur les données ; n'invente aucun chiffre. Pas de diagnostic médical : en cas de douleur inhabituelle ou persistante, recommande la prudence et un professionnel.
+- Si le message contient des séances jointes ("seances_jointes" dans le contexte), réponds à sa question en t'appuyant sur leurs données ; s'il n'a rien écrit, fais-en un retour concis.
 - Pose une question de suivi quand une information te manque (par exemple, où sont les courbatures).
 - Lisible sur un téléphone : réponses courtes à moyennes, en markdown simple (paragraphes, **gras**, listes à puces, titres ### si la réponse est longue). Pas de tableaux, pas de LaTeX ni de formules : écris « 4 × 1 000 m à 3:58/km ».
 
@@ -90,12 +91,28 @@ async function conversationTurns(beforeAt: number): Promise<LlmTurn[]> {
   return turns;
 }
 
-/** Envoie un message au coach et enregistre sa réponse dans le fil. */
-export async function sendChatMessage(text: string): Promise<void> {
+/**
+ * Envoie un message au coach (avec d'éventuels fichiers .fit / .zip joints) et enregistre sa réponse.
+ * Les fichiers joints sont importés sans débrief automatique : le coach y répond dans le cadre du message.
+ */
+export async function sendChatMessage(text: string, files: File[] = []): Promise<void> {
   const clean = text.trim();
-  if (!clean) return;
+  if (!clean && !files.length) return;
+  let attachments: string[] | undefined, attachmentErrors: string[] | undefined;
+  if (files.length) {
+    const { importFiles } = await import('../import/importFit');
+    const results = await importFiles(files);
+    attachments = [...new Set(results.filter((r) => r.activityId && (r.status === 'imported' || r.status === 'duplicate')).map((r) => r.activityId!))];
+    attachmentErrors = results.filter((r) => r.status === 'rejected' || r.status === 'error').map((r) => `${r.fileName} : ${r.message}`);
+    void import('../places').then((m) => m.resolvePlaces());
+  }
   const now = Date.now();
-  await db.messages.add({ at: now, role: 'user', kind: 'chat', text: clean, status: 'done' });
+  await db.messages.add({
+    at: now, role: 'user', kind: 'chat', text: clean, status: 'done',
+    attachments: attachments?.length ? attachments : undefined,
+    attachmentErrors: attachmentErrors?.length ? attachmentErrors : undefined,
+  });
+  if (!clean && !attachments?.length) return; // rien d'exploitable à envoyer au coach
   const coachId = await db.messages.add({ at: now + 1, role: 'coach', kind: 'chat', text: '', status: 'pending' });
   await respond(coachId as number);
 }
@@ -116,6 +133,12 @@ async function respond(coachId: number): Promise<void> {
     const apiKey = await getApiKey(provider);
     if (!apiKey) throw new LlmError('Aucune clé API configurée. Ajoute-la dans les Réglages.');
     const { notebook, context } = await buildChatContext();
+    // Séances jointes au dernier message de l'utilisateur : détail complet pour le coach.
+    const lastUser = await db.messages.where('at').below(placeholder.at).reverse().filter((m) => m.role === 'user').first();
+    if (lastUser?.attachments?.length) {
+      const acts = (await db.activities.bulkGet(lastUser.attachments)).filter((a) => a != null);
+      (context as Record<string, unknown>).seances_jointes = acts.map((a) => sessionDetail(a!));
+    }
     const turns: LlmTurn[] = [
       { role: 'user', text: `Contexte préparé par l'application (à jour, ne pas recopier) :\n${JSON.stringify(context)}` },
       ...(await conversationTurns(placeholder.at)),

@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { SportBadge } from '../components/ActivityCard';
 import AppBar, { AppBarAction } from '../components/AppBar';
 import Icon from '../components/Icon';
-import { useImport } from '../components/ImportContext';
 import Markdown from '../components/Markdown';
 import { db, getSettings, type ChatMessage } from '../lib/db';
 import { activityTitle, fmtDistance } from '../lib/format';
@@ -22,9 +21,11 @@ function dayLabel(t: number): string {
   return dayFmt.format(t);
 }
 
+/** Le fil n'est affiché que sur la route « / » : ailleurs, on ne touche jamais au défilement. */
+const onCoach = () => (location.hash.replace(/^#/, '') || '/') === '/';
 const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160;
 const scrollToBottom = (smooth = true) =>
-  requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }));
+  requestAnimationFrame(() => { if (onCoach()) window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); });
 
 /** Masque la barre de navigation pendant la saisie (clavier ouvert), en restant en bas du fil si on y était. */
 const setTyping = (on: boolean) => {
@@ -81,7 +82,7 @@ export default function Coach() {
       <div className="space-y-3">
         {messages?.length === 0 && (
           <CoachBubble>
-            <Markdown text={'Salut ! Je suis ton coach.\n\n- Importe une séance avec le bouton **+** : je t’en fais le débrief ici.\n- Écris-moi quand tu veux : sensations, courbatures, séance à décaler, objectif…\n\nJe garde en mémoire tes séances et nos échanges.'} />
+            <Markdown text={'Salut ! Je suis ton coach.\n\n- Joins une séance avec le bouton **+** (et ta question si tu veux), ou importe-la depuis l’onglet Séances : je t’en fais le débrief ici.\n- Écris-moi quand tu veux : sensations, courbatures, séance à décaler, objectif…\n\nJe garde en mémoire tes séances et nos échanges.'} />
           </CoachBubble>
         )}
         {messages?.map((m, i) => (
@@ -163,19 +164,29 @@ function CoachMessage({ m }: { m: ChatMessage }) {
 
 function UserBubble({ m }: { m: ChatMessage }) {
   return (
-    <div className="msg-in flex justify-end pl-10">
-      <div className="selectable max-w-full rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-white dark:text-slate-950">
-        {m.text}
-        <span className="mt-1 block text-right text-[11px] opacity-70">{timeFmt.format(m.at)}</span>
-      </div>
+    <div className="msg-in flex flex-col items-end gap-1.5 pl-10">
+      {m.attachments?.map((id) => (
+        <div key={id} className="w-full max-w-xs"><SessionChip activityId={id} /></div>
+      ))}
+      {m.attachmentErrors?.map((e) => (
+        <p key={e} className="max-w-xs rounded-xl bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{e}</p>
+      ))}
+      {m.text && (
+        <div className="selectable max-w-full rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-white dark:text-slate-950">
+          {m.text}
+          <span className="mt-1 block text-right text-[11px] opacity-70">{timeFmt.format(m.at)}</span>
+        </div>
+      )}
     </div>
   );
 }
 
 function Composer({ disabled, busy }: { disabled: boolean; busy: boolean }) {
-  const { openPicker } = useImport();
   const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   // Hauteur automatique (5 lignes maximum).
   useLayoutEffect(() => {
     const el = ref.current;
@@ -184,39 +195,63 @@ function Composer({ disabled, busy }: { disabled: boolean; busy: boolean }) {
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [text]);
 
+  const canSend = (!!text.trim() || files.length > 0) && !disabled && !busy && !sending;
   const send = async () => {
-    const t = text.trim();
-    if (!t || disabled || busy) return;
-    setText('');
+    if (!canSend) return;
+    const t = text.trim(), f = files;
+    setText(''); setFiles([]); setSending(true);
     navigator.vibrate?.(6);
-    const { sendChatMessage } = await import('../lib/llm/chat');
-    await sendChatMessage(t);
+    try {
+      const { sendChatMessage } = await import('../lib/llm/chat');
+      await sendChatMessage(t, f);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
     <div className="composer fixed inset-x-0 z-30 px-3">
-      <div className="mx-auto flex max-w-2xl items-end gap-1.5 rounded-3xl bg-white/90 p-1.5 shadow-lg ring-1 ring-slate-200/80 backdrop-blur-xl dark:bg-slate-900/90 dark:ring-slate-700/80">
-        <button onClick={() => { navigator.vibrate?.(8); openPicker(); }} aria-label="Importer des séances"
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-slate-100 text-accent transition-transform active:scale-90 dark:bg-slate-800">
-          <Icon name="plus" className="size-5" />
-        </button>
-        <textarea
-          ref={ref}
-          rows={1}
-          value={text}
-          disabled={disabled}
-          enterKeyHint="send"
-          onChange={(e) => setText(e.target.value)}
-          onFocus={() => setTyping(true)}
-          onBlur={() => setTyping(false)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
-          placeholder={disabled ? 'Clé API requise (Réglages)' : 'Écris au coach…'}
-          className="max-h-36 min-h-10 flex-1 resize-none bg-transparent py-2 leading-snug outline-none placeholder:text-slate-400"
-        />
-        <button onClick={send} disabled={!text.trim() || disabled || busy} aria-label="Envoyer"
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-white transition-all active:scale-90 disabled:scale-90 disabled:opacity-30 dark:text-slate-950">
-          <Icon name="send" className="size-5" />
-        </button>
+      <div className="mx-auto max-w-2xl rounded-3xl bg-white/90 p-1.5 shadow-lg ring-1 ring-slate-200/80 backdrop-blur-xl dark:bg-slate-900/90 dark:ring-slate-700/80">
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-1 pt-1 pb-1.5" data-noswipe>
+            {files.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="msg-in flex max-w-full items-center gap-1.5 rounded-full bg-accent-soft py-1 pr-1 pl-2.5 text-xs font-medium text-accent">
+                <Icon name="link" className="size-3.5 shrink-0" />
+                <span className="truncate">{f.name}</span>
+                <button onClick={() => setFiles(files.filter((_, k) => k !== i))} aria-label={`Retirer ${f.name}`}
+                  className="grid size-5 shrink-0 place-items-center rounded-full bg-white/70 dark:bg-slate-900/60">
+                  <Icon name="x" className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-1.5">
+          <button onClick={() => { navigator.vibrate?.(8); fileInput.current?.click(); }} aria-label="Joindre une séance"
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-slate-100 text-accent transition-transform active:scale-90 dark:bg-slate-800">
+            <Icon name="plus" className="size-5" />
+          </button>
+          {/* Pas d'attribut accept : Android grise parfois les .fit (type MIME inconnu). */}
+          <input ref={fileInput} type="file" multiple className="hidden" aria-label="Fichiers à joindre"
+            onChange={(e) => { const add = Array.from(e.target.files ?? []); e.target.value = ''; if (add.length) setFiles([...files, ...add]); }} />
+          <textarea
+            ref={ref}
+            rows={1}
+            value={text}
+            disabled={disabled}
+            enterKeyHint="send"
+            onChange={(e) => setText(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
+            placeholder={disabled ? 'Clé API requise (Réglages)' : files.length ? 'Ajoute un message (facultatif)…' : 'Écris au coach…'}
+            className="max-h-36 min-h-10 flex-1 resize-none bg-transparent py-2 leading-snug outline-none placeholder:text-slate-400"
+          />
+          <button onClick={send} disabled={!canSend} aria-label="Envoyer"
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-white transition-all active:scale-90 disabled:scale-90 disabled:opacity-30 dark:text-slate-950">
+            {sending ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="send" className="size-5" />}
+          </button>
+        </div>
       </div>
     </div>
   );

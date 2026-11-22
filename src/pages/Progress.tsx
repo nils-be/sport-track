@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import AppBar from '../components/AppBar';
+import Segmented from '../components/Segmented';
 import { AXIS, ChartReadout, pickCategory, pickNumeric, useChartScrub, usePinchZoom, Val, ZoomBadge } from '../components/Charts';
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
@@ -30,28 +31,12 @@ export default function Progress() {
 
   return (
     <div className="space-y-4">
-      <AppBar title="Progression" />
+      <AppBar title="Progression" subtitle={`${tot.count} séance${tot.count > 1 ? 's' : ''} · ${run ? fmtKm(tot.distanceM) : fmtMeters(tot.distanceM)} · ${fmtDurationShort(tot.durationS)}`} />
 
-      <div className="flex flex-wrap items-center justify-between gap-2" data-noswipe>
-        <div className="flex gap-2">
-          {(['running', 'swimming'] as Sport[]).map((s) => (
-            <button key={s} onClick={() => choose(s)}
-              className={`h-10 rounded-full px-4 text-sm font-medium transition-colors ${sport === s ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'card'}`}>
-              {s === 'running' ? 'Course' : 'Natation'}
-            </button>
-          ))}
-        </div>
-        <div className="flex rounded-lg bg-slate-100 p-0.5 text-sm dark:bg-slate-800">
-          {PERIODS.map((p) => (
-            <button key={p.weeks} onClick={() => setWeeks(p.weeks)}
-              className={`rounded-md px-2.5 py-1.5 transition-all ${weeks === p.weeks ? 'bg-white font-medium shadow-sm dark:bg-slate-700' : 'muted'}`}>{p.label}</button>
-          ))}
-        </div>
+      <div className="space-y-2">
+        <Segmented options={[{ value: 'running' as Sport, label: 'Course' }, { value: 'swimming' as Sport, label: 'Natation' }]} value={sport} onChange={choose} />
+        <Segmented size="sm" options={PERIODS.map((p) => ({ value: p.weeks, label: p.label }))} value={weeks} onChange={setWeeks} />
       </div>
-
-      <p className="muted px-1 text-sm">
-        {tot.count} séance{tot.count > 1 ? 's' : ''} · <b className="text-slate-900 dark:text-slate-100">{run ? fmtKm(tot.distanceM) : fmtMeters(tot.distanceM)}</b> · {fmtDurationShort(tot.durationS)}
-      </p>
 
       <Predictions key={`${sport}-${weeks}`} acts={all} sport={sport} weeks={weeks} from={from} color={color} />
 

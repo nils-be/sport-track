@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ANALYSIS_VERSION } from '../lib/analysis/version';
 import { db } from '../lib/db';
@@ -108,10 +108,20 @@ export default function Layout() {
   }, []);
 
   // Chaque écran s'ouvre en haut de page (le Coach se place lui-même en bas du fil).
-  useEffect(() => { if (pathname !== '/') window.scrollTo(0, 0); }, [pathname]);
+  // « instant » annule un défilement animé en cours ; on recommence une fois le contenu chargé.
+  useLayoutEffect(() => {
+    if (pathname === '/') return;
+    const top = () => window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    top();
+    const raf = requestAnimationFrame(top);
+    const t = window.setTimeout(top, 120);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(t); };
+  }, [pathname]);
 
   useEffect(() => {
     void recoverInterrupted();
+    // Villes des séances pas encore localisées (réseau requis).
+    void import('../lib/places').then((m) => m.resolvePlaces());
     // Séances analysées par une ancienne version de l'algorithme : réanalyse en tâche de fond.
     void db.activities.filter((a) => (a.analysisVersion ?? 0) < ANALYSIS_VERSION).count().then(async (n) => {
       if (!n) return;

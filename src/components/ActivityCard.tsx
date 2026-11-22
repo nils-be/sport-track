@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { blockLabel, dayPart, effortBlockData, sessionKind } from '../lib/analysis/summary';
+import { blockLabel, effortBlockData, sessionKind } from '../lib/analysis/summary';
 import type { Activity } from '../lib/analysis/types';
 import { fmtDate, fmtDistance, fmtDuration, fmtPace, fmtTime, STROKE_LABEL, VARIANT_LABEL } from '../lib/format';
 import Icon from './Icon';
@@ -43,7 +43,7 @@ export default function ActivityCard({ a }: { a: Activity }) {
         <div className="flex items-center gap-3">
           <SportBadge sport={a.sport} className="size-9" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold">{sessionKind(a)} <span className="muted font-normal">· {dayPart(a.startTime)}</span></p>
+            <p className="truncate font-semibold">{sessionKind(a)}{a.place && <span className="muted font-normal"> · {a.place}</span>}</p>
             <p className="muted truncate text-xs first-letter:uppercase">
               {fmtDate(a.startTime)} · {fmtTime(a.startTime)} · {VARIANT_LABEL[a.variant]}
             </p>

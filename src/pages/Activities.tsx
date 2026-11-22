@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import AppBar, { AppBarAction } from '../components/AppBar';
+import Segmented from '../components/Segmented';
 import { useImport } from '../components/ImportContext';
 import { useState } from 'react';
 import ActivityCard from '../components/ActivityCard';
@@ -49,21 +50,7 @@ export default function Activities() {
   return (
     <div className="space-y-4">
       <AppBar title="Séances" subtitle={weekSummary} actions={<AppBarAction icon="plus" label="Importer des séances" onClick={openPicker} />} />
-      <div className="flex gap-2" role="tablist">
-        {FILTERS.map((f) => (
-          <button
-            key={f.id}
-            role="tab"
-            aria-selected={filter === f.id}
-            onClick={() => choose(f.id)}
-            className={`h-10 rounded-full px-4 text-sm font-medium transition ${
-              filter === f.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'card'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <Segmented options={FILTERS.map((f) => ({ value: f.id, label: f.label }))} value={filter} onChange={choose} />
       {list && list.length === 0 && <p className="muted py-8 text-center">Aucune séance.</p>}
       {groups.map((g) => (
         <section key={g.month}>

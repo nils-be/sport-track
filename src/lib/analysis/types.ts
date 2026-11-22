@@ -175,6 +175,8 @@ export interface Activity {
   extras: Extras;
   /** Parcours GPS simplifié [lat, lon] (stocké seulement sur l'appareil), ou null sans GPS. */
   route?: [number, number][] | null;
+  /** Ville du point de départ (géocodage OpenStreetMap) ; null si introuvable, absent si pas encore cherché. */
+  place?: string | null;
   /** Corrections manuelles (distance d'une série ou d'un tour), réappliquées après chaque réanalyse. */
   corrections?: Corrections;
   /** Distance totale mesurée par la montre, si des corrections l'ont modifiée. */

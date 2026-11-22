@@ -73,6 +73,10 @@ export interface ChatMessage {
   text: string;
   /** Séance concernée (débriefs). */
   activityId?: string;
+  /** Séances jointes par l'utilisateur à son message (importées sans débrief automatique). */
+  attachments?: string[];
+  /** Fichiers joints qui n'ont pas pu être importés (nom + raison). */
+  attachmentErrors?: string[];
   status: 'done' | 'pending' | 'error';
   error?: string;
   model?: string;

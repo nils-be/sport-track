@@ -2,16 +2,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import AppBar from '../components/AppBar';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from '../components/Icon';
+import Segmented from '../components/Segmented';
 import { defaultZones, type ZoneSettings } from '../lib/analysis/common';
 import { db, DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../lib/db';
-import { fmtDate, fmtTime, fmtUsd } from '../lib/format';
-import { estimateCost, MODELS, modelInfo, PROVIDER_LABEL, type Provider } from '../lib/llm/models';
+import { MODELS, modelInfo, PROVIDER_LABEL, type Provider } from '../lib/llm/models';
 
-/** Taille typique d'un débrief, pour l'estimation de coût affichée. */
-const TYPICAL_IN = 3000, TYPICAL_OUT = 2500;
 
 const KEY_HELP: Record<Provider, ReactNode> = {
-  claude: <>Crée une clé sur <a className="text-accent underline" href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com</a> (Settings › API keys). L’API est facturée à l’usage : ajoute quelques dollars de crédit.</>,
+  claude: <>Crée une clé sur <a className="text-accent underline" href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com</a> (Settings › API keys).</>,
   gemini: <>Crée une clé sur <a className="text-accent underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com</a>. Attention : avec le niveau gratuit, Google peut utiliser tes données pour améliorer ses modèles ; ce n’est pas le cas avec la facturation activée.</>,
 };
 
@@ -23,7 +21,6 @@ export default function Settings() {
       <AppBar back="/" title="Réglages" />
       <LlmSection s={settings} />
       <ZonesSection s={settings} />
-      <CostsSection />
       <DataSection />
     </div>
   );
@@ -50,14 +47,7 @@ function LlmSection({ s }: { s: AppSettings }) {
 
   return (
     <Card title="Coach IA" desc="Le modèle qui rédige les débriefs et tient le carnet du coach.">
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-        {(['claude', 'gemini'] as const).map((p) => (
-          <button key={p} onClick={() => setProvider(p)}
-            className={`h-10 rounded-lg text-sm font-medium ${provider === p ? 'bg-white shadow-sm dark:bg-slate-700' : 'muted'}`}>
-            {PROVIDER_LABEL[p]}
-          </button>
-        ))}
-      </div>
+      <Segmented options={(['claude', 'gemini'] as const).map((p) => ({ value: p, label: PROVIDER_LABEL[p] }))} value={provider} onChange={setProvider} />
 
       <fieldset className="space-y-2">
         <legend className="muted mb-1 text-xs font-semibold uppercase tracking-wide">Modèle</legend>
@@ -66,7 +56,7 @@ function LlmSection({ s }: { s: AppSettings }) {
             <input type="radio" name="model" className="mt-1 accent-[var(--color-accent)]" checked={s.llm.model[provider] === m.id} onChange={() => setModel(m.id)} />
             <span className="text-sm">
               <span className="font-medium">{m.label}</span>
-              <span className="muted block text-xs">{m.note} · ≈ {fmtUsd(estimateCost(m.id, TYPICAL_IN, TYPICAL_OUT))} par débrief</span>
+              <span className="muted block text-xs">{m.note}</span>
             </span>
           </label>
         ))}
@@ -201,59 +191,6 @@ function ZonesSection({ s }: { s: AppSettings }) {
       </div>
       {progress && <p className="muted text-xs">{progress}</p>}
     </Card>
-  );
-}
-
-// ───────────────────────────────────────────────────────────── Coûts
-
-function CostsSection() {
-  const calls = useLiveQuery(() => db.llmCalls.orderBy('at').reverse().toArray(), []);
-  if (!calls) return null;
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
-  const sum = (from: number, to: number) => {
-    const l = calls.filter((c) => c.at >= from && c.at < to);
-    return { cost: l.reduce((s, c) => s + c.costUsd, 0), n: l.filter((c) => c.ok).length };
-  };
-  const month = sum(monthStart, Infinity), prev = sum(prevStart, monthStart);
-  const total = calls.reduce((s, c) => s + c.costUsd, 0);
-  const monthName = new Intl.DateTimeFormat('fr-FR', { month: 'long' }).format(now);
-
-  return (
-    <Card title="Suivi des coûts" desc="Estimation : tokens d’entrée et de sortie × tarif du modèle. La facture réelle fait foi.">
-      <div className="grid grid-cols-3 gap-2 text-sm">
-        <Stat label={`En ${monthName}`} value={fmtUsd(month.cost)} sub={`${month.n} appel${month.n > 1 ? 's' : ''}`} />
-        <Stat label="Mois précédent" value={fmtUsd(prev.cost)} sub={`${prev.n} appel${prev.n > 1 ? 's' : ''}`} />
-        <Stat label="Depuis le début" value={fmtUsd(total)} sub={`${calls.length} appel${calls.length > 1 ? 's' : ''}`} />
-      </div>
-      {calls.length > 0 && (
-        <details>
-          <summary className="muted cursor-pointer text-sm">Derniers appels</summary>
-          <ul className="mt-2 divide-y divide-slate-100 text-xs dark:divide-slate-800">
-            {calls.slice(0, 20).map((c) => (
-              <li key={c.id} className="flex justify-between gap-2 py-2">
-                <span>
-                  {fmtDate(c.at)} {fmtTime(c.at)} · {modelInfo(c.model)?.label ?? c.model} · {c.kind === 'test' ? 'test' : c.kind === 'chat' ? 'message' : 'débrief'}
-                  {!c.ok && <span className="block text-red-600 dark:text-red-400">{c.error}</span>}
-                </span>
-                <span className="shrink-0 text-right">{c.ok ? <>{fmtUsd(c.costUsd)}<span className="muted block">{c.inputTokens} + {c.outputTokens} tok.</span></> : 'échec'}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </Card>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-      <p className="muted text-xs first-letter:uppercase">{label}</p>
-      <p className="font-semibold">{value}</p>
-      <p className="muted text-xs">{sub}</p>
-    </div>
   );
 }
 

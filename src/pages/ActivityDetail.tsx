@@ -7,6 +7,7 @@ import { ChartCarousel, runSlides, swimSlides } from '../components/Charts';
 import DebriefCard from '../components/DebriefCard';
 import Icon from '../components/Icon';
 import RouteMap from '../components/RouteMap';
+import Segmented from '../components/Segmented';
 import ZoneBars from '../components/ZoneBars';
 import CorrectionSheet from '../components/CorrectionSheet';
 import { useLongPress } from '../components/useLongPress';
@@ -47,7 +48,7 @@ export default function ActivityDetail() {
       <AppBar
         back="/seances"
         title={<span className="flex items-center gap-2"><SportBadge sport={a.sport} className="size-7" />{activityTitle(a)}</span>}
-        subtitle={`${fmtDateLong(a.startTime)} · ${fmtTime(a.startTime)}`}
+        subtitle={`${fmtDateLong(a.startTime)} · ${fmtTime(a.startTime)}${a.place ? ` · ${a.place}` : ''}`}
       />
 
       {a.route && a.route.length > 1 && (
@@ -104,16 +105,7 @@ function KeyStats({ a }: { a: Activity }) {
 // ---------------------------------------------------------------- Onglets
 
 function Tabs<T extends string>({ tabs, value, onChange }: { tabs: [T, string][]; value: T; onChange: (t: T) => void }) {
-  return (
-    <div className="mb-3 flex rounded-xl bg-slate-100 p-1 text-sm dark:bg-slate-800">
-      {tabs.map(([k, label]) => (
-        <button key={k} onClick={() => onChange(k)}
-          className={`flex-1 rounded-lg py-2 transition-all duration-200 ${value === k ? 'bg-white font-semibold shadow-sm dark:bg-slate-700' : 'muted'}`}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
+  return <Segmented className="mb-3" size="sm" options={tabs.map(([v, label]) => ({ value: v, label }))} value={value} onChange={onChange} />;
 }
 
 function RunTabs({ a, r }: { a: Activity; r: RunningAnalysis }) {

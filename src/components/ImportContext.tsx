@@ -45,6 +45,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       const { importFiles } = await import('../lib/import/importFit');
       const res = await importFiles(files);
       setResults(res);
+      void import('../lib/places').then((m) => m.resolvePlaces());
       // Débrief automatique, une seule fois, des nouvelles séances.
       const ids = res.filter((r) => r.status === 'imported' && r.activityId).map((r) => r.activityId!);
       if (!ids.length) setPlan({ kind: 'none' });
@@ -121,7 +122,7 @@ function DebriefNotice({ plan, onPlan, onClose, onGoCoach }: { plan: DebriefPlan
     <div className={box}>
       <p>
         {n} nouvelles séances. Les débriefer toutes ? Elles seront traitées une par une, de la plus ancienne à la plus récente
-        (environ {Math.ceil((n * 15) / 60)} min, quelques centimes au plus avec un modèle économique).
+        (environ {Math.ceil((n * 15) / 60)} min).
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button className="h-10 rounded-lg bg-accent px-3 font-medium text-white dark:text-slate-950"

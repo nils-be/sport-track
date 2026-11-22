@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { db } from '../lib/db';
 import { modelInfo } from '../lib/llm/models';
 import { enqueueDebriefs, useDebriefQueue } from '../lib/llm/queue';
-import { fmtDate, fmtUsd } from '../lib/format';
+import { fmtDate } from '../lib/format';
 import Icon from './Icon';
 
 export default function DebriefCard({ activityId }: { activityId: string }) {
@@ -67,10 +67,8 @@ export default function DebriefCard({ activityId }: { activityId: string }) {
 
         {!busy && (
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            {d?.status === 'done' && d.costUsd != null ? (
-              <p className="muted text-xs">
-                {modelInfo(d.model ?? '')?.label ?? d.model} · {fmtDate(d.createdAt)} · {(d.inputTokens ?? 0) + (d.outputTokens ?? 0)} tokens · ≈ {fmtUsd(d.costUsd)}
-              </p>
+            {d?.status === 'done' ? (
+              <p className="muted text-xs">{modelInfo(d.model ?? '')?.label ?? d.model} · {fmtDate(d.createdAt)}</p>
             ) : <span />}
             <button onClick={regenerate} className="h-9 rounded-lg px-3 text-sm font-medium text-accent ring-1 ring-accent/40">
               {d?.status === 'done' ? 'Regénérer' : d?.status === 'error' ? 'Réessayer' : 'Générer le débrief'}

@@ -22,6 +22,9 @@
 }
 
 @media (prefers-color-scheme: dark) {
+  html {
+    background-color: #0b1120;
+  }
   :root {
     --tt-bg: #0f172a;
     --tt-border: #334155;
@@ -35,6 +38,8 @@
 }
 
 html {
+  /* Même fond que l'app jusque sous les barres système (affichage bord à bord). */
+  background-color: #f8fafc;
   -webkit-tap-highlight-color: transparent;
   color-scheme: light dark;
   /* Comportement d'application : pas de rebond, pas de zoom au double-tap, pas de barre de défilement. */

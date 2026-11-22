@@ -30,7 +30,7 @@ export const MODELS: ModelInfo[] = [
     inputPerM: 0.1,
     outputPerM: 0.5,
     longPrompt: { aboveTokens: 100_000, inputPerM: 0.5, outputPerM: 2.5 },
-    note: 'Rapide et très économique (recommandé)',
+    note: 'Rapide (recommandé)',
   },
   {
     id: 'claude-sonnet-5-5',
@@ -38,7 +38,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'claude',
     inputPerM: 2,
     outputPerM: 10,
-    note: 'Analyse plus fine, environ 20 × plus cher',
+    note: 'Analyse plus fine, un peu plus lent',
   },
   {
     id: 'gemini-3.5-flash-lite',
@@ -46,7 +46,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'gemini',
     inputPerM: 0.3,
     outputPerM: 2.5,
-    note: 'Économique (recommandé)',
+    note: 'Rapide (recommandé)',
   },
   {
     id: 'gemini-4-hydrogen',

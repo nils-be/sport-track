@@ -23,6 +23,14 @@ const dateFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeri
 
 /** Texte d'un message tel qu'il est montré au LLM (les débriefs sont annoncés comme tels). */
 export async function messageForLlm(m: ChatMessage): Promise<string> {
+  if (m.attachments?.length) {
+    const labels: string[] = [];
+    for (const id of m.attachments) {
+      const a = await db.activities.get(id);
+      if (a) labels.push(`${a.sport === 'running' ? 'course' : 'natation'} du ${dateFmt.format(a.startTime)}`);
+    }
+    return `${labels.length ? `[Séance${labels.length > 1 ? 's' : ''} jointe${labels.length > 1 ? 's' : ''} : ${labels.join(', ')}]\n` : ''}${m.text}`;
+  }
   if (m.kind !== 'debrief' || !m.activityId) return m.text;
   const a = await db.activities.get(m.activityId);
   const label = a ? `${a.sport === 'running' ? 'course' : 'natation'} du ${dateFmt.format(a.startTime)}` : 'une séance';
@@ -32,7 +40,7 @@ export async function messageForLlm(m: ChatMessage): Promise<string> {
 /** Derniers messages terminés du fil, du plus ancien au plus récent. */
 export async function recentMessages(limit: number, exclude?: (m: ChatMessage) => boolean): Promise<ChatMessage[]> {
   const list = await db.messages.orderBy('at').reverse()
-    .filter((m) => m.status === 'done' && !!m.text && !(exclude?.(m) ?? false))
+    .filter((m) => m.status === 'done' && (!!m.text || !!m.attachments?.length) && !(exclude?.(m) ?? false))
     .limit(limit).toArray();
   return list.reverse();
 }
