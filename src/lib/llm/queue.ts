@@ -1,6 +1,7 @@
 // File d'attente des débriefs. Module léger : le code d'appel LLM (SDK) n'est chargé qu'au premier débrief.
 import { useSyncExternalStore } from 'react';
 import { db } from '../db';
+import { upsertDebriefMessage } from '../thread';
 import type { Provider } from './models';
 
 interface QueueState {
@@ -29,6 +30,7 @@ export async function enqueueDebriefs(ids: string[]): Promise<void> {
   for (const id of fresh) {
     const prev = await db.debriefs.get(id);
     await db.debriefs.put({ ...prev, activityId: id, status: 'pending', createdAt: prev?.createdAt ?? Date.now() });
+    await upsertDebriefMessage(id, { status: 'pending', error: undefined });
   }
   emit({ ...state, pending: sorted });
   if (!state.running) void processQueue();
@@ -58,4 +60,6 @@ export async function recoverInterrupted(): Promise<void> {
   if (state.running || state.pending.length) return;
   await db.debriefs.where('status').equals('pending')
     .modify({ status: 'error', error: 'Débrief interrompu (application fermée pendant la génération). Relance-le.' });
+  await db.messages.filter((m) => m.status === 'pending')
+    .modify({ status: 'error', error: 'Interrompu (application fermée pendant la réponse). Réessaie.' });
 }

@@ -1,7 +1,7 @@
 // Prépare le JSON compact envoyé au LLM. Jamais de données seconde par seconde :
 // uniquement des indicateurs calculés, de taille à peu près constante quel que soit l'historique.
 import type { Activity, RunLap } from '../analysis/types';
-import type { DebriefContent, PlannedSession } from '../db';
+import type { DebriefContent } from '../db';
 import { fmtDuration, fmtPace, LAP_KIND_LABEL, STROKE_LABEL, VARIANT_LABEL } from '../format';
 import { addWeeks, DAY, weekStart } from '../stats';
 
@@ -233,30 +233,16 @@ export interface DebriefInput {
   carnet_du_coach: string;
   statistiques_recentes: ReturnType<typeof recentStats>;
   seances_comparables: ReturnType<typeof sessionShort>[];
-  seance_prevue?: ReturnType<typeof plannedSummary>;
+  conversation_recente?: string[];
 }
 
-/** Résumé d'une séance prévue (plan validé), pour comparer au réalisé. */
-export function plannedSummary(s: PlannedSession) {
-  return {
-    jour: new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(s.date),
-    sport: s.sport === 'running' ? 'course' : 'natation',
-    type: s.kind,
-    titre: s.title,
-    description: s.description,
-    duree_min: s.durationMin ?? undefined,
-    distance: s.distanceM ? (s.sport === 'running' ? `${km(s.distanceM)} km` : `${Math.round(s.distanceM)} m`) : undefined,
-    intensite: s.intensity || undefined,
-  };
-}
-
-export function buildDebriefInput(a: Activity, history: Activity[], notebook: string, debriefs: Map<string, DebriefContent>, planned: PlannedSession | null = null, now = Date.now()): DebriefInput {
+export function buildDebriefInput(a: Activity, history: Activity[], notebook: string, debriefs: Map<string, DebriefContent>, conversation: string[] = [], now = Date.now()): DebriefInput {
   return {
     date_du_jour: new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(now),
     seance: sessionDetail(a),
     carnet_du_coach: notebook,
     statistiques_recentes: recentStats(a.startTime, history, a),
     seances_comparables: comparableSessions(a, history).map((h) => sessionShort(h, a.startTime, debriefs.get(h.id))),
-    seance_prevue: planned ? plannedSummary(planned) : undefined,
+    conversation_recente: conversation.length ? conversation : undefined,
   };
 }

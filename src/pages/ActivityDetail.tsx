@@ -1,13 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import AppBar from '../components/AppBar';
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { SportBadge } from '../components/ActivityCard';
-import { RunChart, SwimChart } from '../components/Charts';
+import AppBar from '../components/AppBar';
+import { ChartCarousel, runSlides, swimSlides } from '../components/Charts';
 import DebriefCard from '../components/DebriefCard';
 import Icon from '../components/Icon';
 import ZoneBars from '../components/ZoneBars';
-import type { Activity, ActivityStreams, RunningAnalysis, SwimmingAnalysis } from '../lib/analysis/types';
+import type { Activity, RunningAnalysis, SwimmingAnalysis } from '../lib/analysis/types';
 import { db, deleteActivity } from '../lib/db';
 import {
   activityTitle, fmtDateLong, fmtDistance, fmtDuration, fmtKm, fmtMeters, fmtNum, fmtPace, fmtTime,
@@ -50,33 +50,18 @@ export default function ActivityDetail() {
 
       <DebriefCard activityId={a.id} />
 
-      {a.running && <RunSection a={a} r={a.running} streams={streams ?? null} />}
-      {a.swimming && <SwimSection s={a.swimming} />}
+      {streams && a.running && <ChartCarousel slides={runSlides(streams)} />}
+      {a.swimming && <ChartCarousel slides={swimSlides(a.swimming.lengths)} />}
 
-      {a.hrZones && (
-        <Card title="Temps par zone cardiaque">
-          <ZoneBars zones={a.hrZones} />
-        </Card>
-      )}
+      {a.running && <RunTabs a={a} r={a.running} />}
+      {a.swimming && <SwimTabs a={a} s={a.swimming} />}
 
-      <Extras a={a} />
+      <Details a={a} />
 
       <button onClick={remove} className="muted mx-auto flex items-center gap-2 py-3 text-sm">
         <Icon name="trash" className="size-4" /> Supprimer la séance
       </button>
     </div>
-  );
-}
-
-function Card({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
-  return (
-    <section className="card p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-semibold">{title}</h2>
-        {right}
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -103,91 +88,51 @@ function KeyStats({ a }: { a: Activity }) {
       {r && <Stat label="Cadence" value={fmtNum(r.avgCadenceSpm)} sub="pas/min" />}
       {s && <Stat label="SWOLF moy." value={fmtNum(s.avgSwolf)} sub={s.poolLengthM ? `bassin ${s.poolLengthM} m` : undefined} />}
       {s && <Stat label="Mouvements" value={fmtNum(s.avgStrokesPerLength)} sub="par longueur" />}
-      <Stat label="Calories" value={fmtNum(a.calories)} sub="kcal" />
     </section>
   );
 }
 
-// ---------------------------------------------------------------- Course
+// ---------------------------------------------------------------- Onglets
 
-function RunSection({ a, r, streams }: { a: Activity; r: RunningAnalysis; streams: ActivityStreams | null }) {
-  const [tab, setTab] = useState<'laps' | 'km'>(r.isInterval || r.laps.length > 1 ? 'laps' : 'km');
-  const d = r.cardiacDrift;
+function Tabs<T extends string>({ tabs, value, onChange }: { tabs: [T, string][]; value: T; onChange: (t: T) => void }) {
   return (
-    <>
-      {streams && (
-        <Card title="Allure et fréquence cardiaque">
-          <RunChart streams={streams} />
-        </Card>
-      )}
+    <div className="mb-3 flex rounded-xl bg-slate-100 p-1 text-sm dark:bg-slate-800">
+      {tabs.map(([k, label]) => (
+        <button key={k} onClick={() => onChange(k)}
+          className={`flex-1 rounded-lg py-2 transition-all duration-200 ${value === k ? 'bg-white font-semibold shadow-sm dark:bg-slate-700' : 'muted'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
-      {r.isInterval && r.structure.length > 0 && (
-        <Card title="Structure du fractionné">
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {r.structure.map((s) => (
-              <div key={s.kind} className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-                <p className="font-medium">{s.kind === 'steady' ? 'Continu' : LAP_KIND_LABEL[s.kind]} · {s.count}</p>
-                <p className="muted text-xs">{fmtKm(s.distanceM)} · {fmtDuration(s.durationS)}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+function RunTabs({ a, r }: { a: Activity; r: RunningAnalysis }) {
+  const [tab, setTab] = useState<'laps' | 'km' | 'zones'>(r.isInterval || r.laps.length > 1 ? 'laps' : 'km');
+  const tabs: ['laps' | 'km' | 'zones', string][] = [['laps', `Tours · ${r.laps.length}`], ['km', 'Km'], ...(a.hrZones ? [['zones', 'Zones'] as ['zones', string]] : [])];
+  return (
+    <section className="card p-4">
+      <Tabs tabs={tabs} value={tab} onChange={setTab} />
+      <div key={tab} className="page-in">
+        {tab === 'laps' && <LapsTable r={r} />}
+        {tab === 'km' && <KmTable r={r} />}
+        {tab === 'zones' && a.hrZones && <ZoneBars zones={a.hrZones} />}
+      </div>
+    </section>
+  );
+}
 
-      <Card
-        title={tab === 'laps' ? `Tours (${r.laps.length})` : `Par kilomètre (${r.kmSplits.length})`}
-        right={
-          <div className="flex rounded-lg bg-slate-100 p-0.5 text-sm dark:bg-slate-800">
-            {(['laps', 'km'] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)}
-                className={`rounded-md px-3 py-1.5 ${tab === t ? 'bg-white font-medium shadow-sm dark:bg-slate-700' : 'muted'}`}>
-                {t === 'laps' ? 'Tours' : 'Km'}
-              </button>
-            ))}
-          </div>
-        }
-      >
-        {tab === 'laps' ? <LapsTable r={r} /> : <KmTable r={r} />}
-      </Card>
-
-      <Card title="Dérive cardiaque">
-        {d.applicable ? (
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-2xl font-semibold">{d.decouplingPct! > 0 ? '+' : ''}{d.decouplingPct!.toString().replace('.', ',')} %</span>
-              <span className="muted ml-2">
-                {Math.abs(d.decouplingPct!) < 5 ? 'faible : bonne endurance sur cet effort' : 'notable : fatigue, chaleur ou allure trop élevée'}
-              </span>
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {([['1re moitié', d.firstHalf!], ['2e moitié', d.secondHalf!]] as const).map(([l, h]) => (
-                <div key={l} className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-                  <p className="muted text-xs">{l}</p>
-                  <p>{fmtPace(h.paceSPerKm)} /km · {h.avgHr} bpm</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="muted text-sm">Non applicable. {d.reason}</p>
-        )}
-      </Card>
-
-      {r.bestEfforts.length > 0 && (
-        <Card title="Meilleurs temps de la séance">
-          <div className="flex flex-wrap gap-2 text-sm">
-            {r.bestEfforts.map((b) => (
-              <div key={b.distanceM} className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
-                <p className="muted text-xs">{b.distanceM === 21097 ? 'Semi' : b.distanceM === 42195 ? 'Marathon' : fmtKm(b.distanceM).replace(',00', '')}</p>
-                <p className="font-semibold">{fmtDuration(b.durationS)}</p>
-                <p className="muted text-xs">{fmtPace((b.durationS / b.distanceM) * 1000)} /km</p>
-              </div>
-            ))}
-          </div>
-          {a.running?.isInterval && <p className="muted mt-2 text-xs">Calculés sur toute la séance, récupérations comprises.</p>}
-        </Card>
-      )}
-    </>
+function SwimTabs({ a, s }: { a: Activity; s: SwimmingAnalysis }) {
+  const [tab, setTab] = useState<'sets' | 'zones'>('sets');
+  const tabs: ['sets' | 'zones', string][] = [['sets', `Séries · ${s.sets.filter((x) => x.kind === 'swim').length}`], ...(a.hrZones ? [['zones', 'Zones'] as ['zones', string]] : [])];
+  return (
+    <section className="card p-4">
+      <Tabs tabs={tabs} value={tab} onChange={setTab} />
+      <div key={tab} className="page-in">
+        {tab === 'sets' && <SetsTable s={s} />}
+        {tab === 'zones' && a.hrZones && <ZoneBars zones={a.hrZones} />}
+      </div>
+    </section>
   );
 }
 
@@ -252,44 +197,10 @@ function KmTable({ r }: { r: RunningAnalysis }) {
 
 // ---------------------------------------------------------------- Natation
 
-function SwimSection({ s }: { s: SwimmingAnalysis }) {
+function SetsTable({ s }: { s: SwimmingAnalysis }) {
   const [open, setOpen] = useState<number | null>(null);
-  const swimSets = s.sets.filter((x) => x.kind === 'swim');
   return (
     <>
-      {s.lengths.some((l) => l.active) && (
-        <Card title="Allure par longueur">
-          <SwimChart lengths={s.lengths} />
-        </Card>
-      )}
-
-      <Card title="Répartition">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-            <p className="muted text-xs">Nage / repos</p>
-            <p>{fmtDuration(s.activeTimeS)} / {fmtDuration(s.restTimeS)}</p>
-          </div>
-          <div className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-            <p className="muted text-xs">Séries · longueurs</p>
-            <p>{swimSets.length} séries · {s.activeLengths ?? '–'} longueurs</p>
-          </div>
-          {s.strokeBreakdown.map((b) => (
-            <div key={b.stroke} className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-              <p className="muted text-xs">{STROKE_LABEL[b.stroke]}</p>
-              <p>{fmtMeters(b.distanceM)} · {b.lengths} long.</p>
-            </div>
-          ))}
-        </div>
-        {s.suspectLengths > 0 && (
-          <p className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            <Icon name="alert" className="size-4 shrink-0" />
-            {s.suspectLengths} longueur{s.suspectLengths > 1 ? 's' : ''} anormalement courte{s.suspectLengths > 1 ? 's' : ''} :
-            la montre a probablement coupé une longueur en deux. Elles sont exclues des records.
-          </p>
-        )}
-      </Card>
-
-      <Card title="Séries">
         <div className="-mx-2 overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-200 dark:border-slate-800">
@@ -336,21 +247,7 @@ function SwimSection({ s }: { s: SwimmingAnalysis }) {
             </tbody>
           </table>
         </div>
-        <p className="muted mt-2 text-xs">Touchez une série pour voir ses longueurs.</p>
-      </Card>
-
-      {s.bestEfforts.length > 0 && (
-        <Card title="Meilleurs temps de la séance">
-          <div className="flex flex-wrap gap-2 text-sm">
-            {s.bestEfforts.map((b) => (
-              <div key={b.distanceM} className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
-                <p className="muted text-xs">{b.distanceM} m</p>
-                <p className="font-semibold">{fmtDuration(b.durationS)}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+        <p className="muted mt-2 text-xs">Touche une série pour voir ses longueurs.</p>
     </>
   );
 }
@@ -367,30 +264,46 @@ function SetRows({ row, details, isOpen, onToggle }: { row: ReactNode; details: 
   );
 }
 
-// ---------------------------------------------------------------- Autres
+// ---------------------------------------------------------------- Détails (repliable)
 
-function Extras({ a }: { a: Activity }) {
-  const e = a.extras;
+function Details({ a }: { a: Activity }) {
+  const r = a.running, sw = a.swimming, e = a.extras;
   const items: [string, string][] = [];
-  if (e.aerobicTE) items.push(['Training Effect aérobie', e.aerobicTE.toFixed(1).replace('.', ',')]);
-  if (e.anaerobicTE) items.push(['Training Effect anaérobie', e.anaerobicTE.toFixed(1).replace('.', ',')]);
-  if (e.avgPowerW) items.push(['Puissance moy.', `${e.avgPowerW} W`]);
-  if (e.normalizedPowerW) items.push(['Puissance normalisée', `${e.normalizedPowerW} W`]);
-  if (a.running?.gradeAdjustedPaceSPerKm) items.push(['Allure ajustée à la pente', `${fmtPace(a.running.gradeAdjustedPaceSPerKm)} /km`]);
+  if (a.calories) items.push(['Calories', `${a.calories} kcal`]);
+  if (sw) {
+    items.push(['Nage / repos', `${fmtDuration(sw.activeTimeS)} / ${fmtDuration(sw.restTimeS)}`]);
+    for (const b of sw.strokeBreakdown) items.push([STROKE_LABEL[b.stroke], `${fmtMeters(b.distanceM)} · ${b.lengths} longueurs`]);
+  }
+  if (r?.isInterval) for (const x of r.structure) items.push([x.kind === 'steady' ? 'Continu' : LAP_KIND_LABEL[x.kind], `${x.count} × · ${fmtKm(x.distanceM)} · ${fmtDuration(x.durationS)}`]);
+  if (r) {
+    const d = r.cardiacDrift;
+    items.push(['Dérive cardiaque', d.applicable
+      ? `${d.decouplingPct! > 0 ? '+' : ''}${d.decouplingPct!.toString().replace('.', ',')} % (${fmtPace(d.firstHalf!.paceSPerKm)} → ${fmtPace(d.secondHalf!.paceSPerKm)} /km, FC ${d.firstHalf!.avgHr} → ${d.secondHalf!.avgHr})`
+      : 'non applicable']);
+  }
+  for (const b of r?.bestEfforts ?? []) items.push([`Meilleur ${b.distanceM === 21097 ? 'semi' : b.distanceM === 42195 ? 'marathon' : fmtKm(b.distanceM).replace(',00', '')}`, `${fmtDuration(b.durationS)} (${fmtPace((b.durationS / b.distanceM) * 1000)} /km)`]);
+  for (const b of sw?.bestEfforts ?? []) items.push([`Meilleur ${b.distanceM} m`, fmtDuration(b.durationS)]);
+  if (e.aerobicTE) items.push(['Training Effect aérobie / anaérobie', `${e.aerobicTE.toFixed(1).replace('.', ',')} / ${(e.anaerobicTE ?? 0).toFixed(1).replace('.', ',')}`]);
+  if (e.avgPowerW) items.push(['Puissance moy. / normalisée', `${e.avgPowerW} / ${e.normalizedPowerW ?? '–'} W`]);
+  if (r?.gradeAdjustedPaceSPerKm) items.push(['Allure ajustée à la pente', `${fmtPace(r.gradeAdjustedPaceSPerKm)} /km`]);
   if (e.avgStanceTimeMs) items.push(['Temps de contact au sol', `${Math.round(e.avgStanceTimeMs)} ms`]);
   if (e.avgStepLengthM) items.push(['Longueur de pas', `${e.avgStepLengthM.toFixed(2).replace('.', ',')} m`]);
-  if (e.avgVerticalRatioPct) items.push(['Ratio vertical', `${e.avgVerticalRatioPct.toFixed(1).replace('.', ',')} %`]);
   if (a.device) items.push(['Montre', a.device]);
-  if (!items.length) return null;
   return (
     <details className="card group p-4">
       <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
-        Plus de données
-        <Icon name="down" className="muted size-5 transition group-open:rotate-180" />
+        Détails
+        <Icon name="down" className="muted size-5 transition-transform duration-300 group-open:rotate-180" />
       </summary>
-      <dl className="mt-3 divide-y divide-slate-100 text-sm dark:divide-slate-800">
+      {sw && sw.suspectLengths > 0 && (
+        <p className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+          <Icon name="alert" className="size-4 shrink-0" />
+          {sw.suspectLengths} longueur{sw.suspectLengths > 1 ? 's' : ''} anormalement courte{sw.suspectLengths > 1 ? 's' : ''} : probablement mal détectée{sw.suspectLengths > 1 ? 's' : ''} par la montre, exclue{sw.suspectLengths > 1 ? 's' : ''} des records.
+        </p>
+      )}
+      <dl className="page-in mt-2 divide-y divide-slate-100 text-sm dark:divide-slate-800">
         {items.map(([k, v]) => (
-          <div key={k} className="flex justify-between py-2"><dt className="muted">{k}</dt><dd>{v}</dd></div>
+          <div key={k} className="flex justify-between gap-3 py-2"><dt className="muted">{k}</dt><dd className="text-right">{v}</dd></div>
         ))}
       </dl>
     </details>

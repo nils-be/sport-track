@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Activity, ActivityStreams, Sport } from './analysis/types';
+import type { Activity, ActivityStreams } from './analysis/types';
 import { defaultZones, type ZoneSettings } from './analysis/common';
 import { DEFAULT_MODEL, type Provider } from './llm/models';
 
@@ -63,41 +63,22 @@ export interface NotebookVersion {
   activityId?: string;
 }
 
-export const SESSION_KINDS = ['footing', 'endurance', 'sortie_longue', 'tempo', 'fractionne', 'recup', 'technique', 'series'] as const;
-export type SessionKind = (typeof SESSION_KINDS)[number];
-
-/** Séance prévue dans un plan hebdomadaire. */
-export interface PlannedSession {
-  id: string;
-  /** Jour prévu (minuit local, ms). */
-  date: number;
-  sport: Sport;
-  kind: SessionKind;
-  title: string;
-  description: string;
-  durationMin: number | null;
-  distanceM: number | null;
-  intensity: string;
-  /** Lien manuel vers une séance réelle (null = délier explicitement ; absent = association automatique). */
-  linkedActivityId?: string | null;
-}
-
-/** Plan d'une semaine (lundi → dimanche). */
-export interface WeekPlan {
-  /** Lundi 0 h (ms). */
-  weekStart: number;
-  status: 'draft' | 'validated';
-  note: string;
-  summary: string;
-  sessions: PlannedSession[];
-  createdAt: number;
-  updatedAt: number;
-  provider?: Provider;
+/** Message du fil de discussion avec le coach (débriefs et échanges). */
+export interface ChatMessage {
+  id?: number;
+  at: number;
+  role: 'coach' | 'user';
+  kind: 'debrief' | 'chat';
+  /** Texte en markdown simple. */
+  text: string;
+  /** Séance concernée (débriefs). */
+  activityId?: string;
+  status: 'done' | 'pending' | 'error';
+  error?: string;
   model?: string;
   costUsd?: number;
   inputTokens?: number;
   outputTokens?: number;
-  sentJson?: string;
 }
 
 export interface LlmCall {
@@ -106,7 +87,7 @@ export interface LlmCall {
   provider: Provider;
   model: string;
   activityId?: string;
-  kind: 'debrief' | 'test' | 'plan';
+  kind: 'debrief' | 'test' | 'chat';
   ok: boolean;
   inputTokens: number;
   outputTokens: number;
@@ -123,7 +104,7 @@ class SportDB extends Dexie {
   debriefs!: EntityTable<Debrief, 'activityId'>;
   notebook!: EntityTable<NotebookVersion, 'id'>;
   llmCalls!: EntityTable<LlmCall, 'id'>;
-  plans!: EntityTable<WeekPlan, 'weekStart'>;
+  messages!: EntityTable<ChatMessage, 'id'>;
 
   constructor() {
     super('sport-track');
@@ -142,6 +123,11 @@ class SportDB extends Dexie {
     this.version(3).stores({
       plans: 'weekStart, status',
     });
+    // V3 : la planification par calendrier est remplacée par le fil de discussion avec le coach.
+    this.version(4).stores({
+      plans: null,
+      messages: '++id, at, activityId',
+    });
   }
 }
 
@@ -159,10 +145,11 @@ export async function saveSettings(patch: Partial<Omit<AppSettings, 'id'>>): Pro
 }
 
 export async function deleteActivity(id: string): Promise<void> {
-  await db.transaction('rw', [db.activities, db.streams, db.fitFiles, db.debriefs], async () => {
+  await db.transaction('rw', [db.activities, db.streams, db.fitFiles, db.debriefs, db.messages], async () => {
     await db.activities.delete(id);
     await db.streams.delete(id);
     await db.fitFiles.delete(id);
     await db.debriefs.delete(id);
+    await db.messages.where('activityId').equals(id).delete();
   });
 }

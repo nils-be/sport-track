@@ -6,10 +6,29 @@ export interface LlmRequest {
   model: string;
   apiKey: string;
   system: string;
-  user: string;
+  /** Conversation : alterne user / assistant, commence et finit par user. */
+  messages: LlmTurn[];
   /** Schéma JSON de la réponse attendue. */
   schema: Record<string, unknown>;
   maxTokens: number;
+}
+
+export interface LlmTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+/** Fusionne les tours consécutifs du même rôle et garantit un premier tour « user ». */
+export function normalizeTurns(turns: LlmTurn[]): LlmTurn[] {
+  const out: LlmTurn[] = [];
+  for (const t of turns) {
+    if (!t.text.trim()) continue;
+    const last = out[out.length - 1];
+    if (last && last.role === t.role) last.text += `\n\n${t.text}`;
+    else out.push({ ...t });
+  }
+  if (out[0]?.role !== 'user') out.unshift({ role: 'user', text: '(début de la conversation)' });
+  return out;
 }
 
 export interface LlmResponse {
@@ -41,7 +60,7 @@ async function callClaude(req: LlmRequest): Promise<LlmResponse> {
     model: req.model,
     max_tokens: req.maxTokens,
     system: req.system,
-    messages: [{ role: 'user' as const, content: req.user }],
+    messages: normalizeTurns(req.messages).map((t) => ({ role: t.role, content: t.text })),
     // Réflexion adaptative (par défaut) avec un effort bas : débrief court, coût minimal.
     output_config: {
       effort: 'low' as const,
@@ -108,7 +127,7 @@ async function callGemini(req: LlmRequest): Promise<LlmResponse> {
       headers: { 'content-type': 'application/json', 'x-goog-api-key': req.apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: req.system }] },
-        contents: [{ role: 'user', parts: [{ text: req.user }] }],
+        contents: normalizeTurns(req.messages).map((t) => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.text }] })),
         generationConfig: {
           responseMimeType: 'application/json',
           responseJsonSchema: geminiSchema(req.schema),

@@ -4,7 +4,8 @@ import { useState } from 'react';
 import ActivityCard from '../components/ActivityCard';
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
-import { fmtMonth } from '../lib/format';
+import { fmtKm, fmtMeters, fmtMonth } from '../lib/format';
+import { volumeOf, weekStart } from '../lib/stats';
 
 type Filter = 'all' | Sport;
 const FILTERS: { id: Filter; label: string }[] = [
@@ -22,6 +23,14 @@ export default function Activities() {
     return filter === 'all' ? all : all.filter((a) => a.sport === filter);
   }, [filter]);
 
+  const week = useLiveQuery(() => db.activities.where('startTime').aboveOrEqual(weekStart(Date.now())).toArray(), []);
+  const weekSummary = week && week.length
+    ? `Cette semaine : ${[
+        volumeOf(week.filter((a) => a.sport === 'running')),
+        volumeOf(week.filter((a) => a.sport === 'swimming')),
+      ].map((v, i) => (v.count ? (i === 0 ? fmtKm(v.distanceM) : fmtMeters(v.distanceM)) : null)).filter(Boolean).join(' · ')}`
+    : 'Aucune séance cette semaine';
+
   const choose = (f: Filter) => {
     setFilter(f);
     try { sessionStorage.setItem('filter', f); } catch { /* stockage indisponible */ }
@@ -37,7 +46,7 @@ export default function Activities() {
 
   return (
     <div className="space-y-4">
-      <AppBar title="Séances" />
+      <AppBar title="Séances" subtitle={weekSummary} />
       <div className="flex gap-2" role="tablist">
         {FILTERS.map((f) => (
           <button

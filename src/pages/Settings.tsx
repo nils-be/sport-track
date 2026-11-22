@@ -234,7 +234,7 @@ function CostsSection() {
             {calls.slice(0, 20).map((c) => (
               <li key={c.id} className="flex justify-between gap-2 py-2">
                 <span>
-                  {fmtDate(c.at)} {fmtTime(c.at)} · {modelInfo(c.model)?.label ?? c.model} · {c.kind === 'test' ? 'test' : 'débrief'}
+                  {fmtDate(c.at)} {fmtTime(c.at)} · {modelInfo(c.model)?.label ?? c.model} · {c.kind === 'test' ? 'test' : c.kind === 'chat' ? 'message' : 'débrief'}
                   {!c.ok && <span className="block text-red-600 dark:text-red-400">{c.error}</span>}
                 </span>
                 <span className="shrink-0 text-right">{c.ok ? <>{fmtUsd(c.costUsd)}<span className="muted block">{c.inputTokens} + {c.outputTokens} tok.</span></> : 'échec'}</span>

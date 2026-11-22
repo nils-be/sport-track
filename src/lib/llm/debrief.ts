@@ -1,7 +1,6 @@
 import { db, getSettings, type DebriefContent } from '../db';
 import { currentNotebook, MAX_WORDS, saveNotebook, wordCount } from '../notebook';
-import { plannedSessionFor } from '../planMatch';
-import { weekStart } from '../stats';
+import { debriefToMarkdown, recentConversationLines, upsertDebriefMessage } from '../thread';
 import { buildDebriefInput } from './context';
 import { estimateCost, type Provider } from './models';
 import { parseDebriefResponse, ParseError, RESPONSE_SCHEMA, SYSTEM_PROMPT } from './prompt';
@@ -35,6 +34,8 @@ export async function generateDebrief(activityId: string): Promise<void> {
 
   const previous = await db.debriefs.get(activityId);
   await db.debriefs.put({ ...previous, activityId, status: 'pending', createdAt: previous?.createdAt ?? Date.now() });
+  // Le débrief apparaît dans le fil du coach (un seul message par séance, remplacé si on regénère).
+  await upsertDebriefMessage(activityId, { status: 'pending', error: undefined });
 
   const [history, done, notebook] = await Promise.all([
     db.activities.toArray(),
@@ -42,17 +43,16 @@ export async function generateDebrief(activityId: string): Promise<void> {
     currentNotebook(),
   ]);
   const debriefMap = new Map<string, DebriefContent>(done.filter((d) => d.content).map((d) => [d.activityId, d.content!]));
-  // V2 : si la séance correspond à une séance prévue d'un plan validé, le coach compare au prévu.
-  const plan = await db.plans.get(weekStart(activity.startTime));
-  const planned = plannedSessionFor(activity.id, plan, history);
-  const input = buildDebriefInput(activity, history, notebook.text, debriefMap, planned);
+  // Les derniers échanges du fil (douleurs, séance décalée…) font partie du contexte.
+  const conversation = await recentConversationLines(10, 600, activityId);
+  const input = buildDebriefInput(activity, history, notebook.text, debriefMap, conversation);
   const sentJson = JSON.stringify(input);
 
   try {
     const res = await callLlm({
       provider, model, apiKey,
       system: SYSTEM_PROMPT,
-      user: `Voici les données de la séance à débriefer :\n${sentJson}`,
+      messages: [{ role: 'user', text: `Voici les données de la séance à débriefer :\n${sentJson}` }],
       schema: RESPONSE_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: MAX_OUTPUT_TOKENS,
     });
@@ -63,6 +63,10 @@ export async function generateDebrief(activityId: string): Promise<void> {
     await db.debriefs.put({
       activityId, status: 'done', createdAt: Date.now(), content: parsed.debrief,
       provider, model, inputTokens: res.inputTokens, outputTokens: res.outputTokens, costUsd: cost, sentJson,
+    });
+    await upsertDebriefMessage(activityId, {
+      status: 'done', text: debriefToMarkdown(parsed.debrief), error: undefined,
+      model, costUsd: cost, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
     });
 
     // Carnet : on n'écrase pas une modification faite par l'utilisateur pendant l'appel.
@@ -77,6 +81,7 @@ export async function generateDebrief(activityId: string): Promise<void> {
       await db.llmCalls.add({ at: Date.now(), provider, model, activityId, kind: 'debrief', ok: false, inputTokens: 0, outputTokens: 0, costUsd: 0, error: msg });
     }
     await db.debriefs.put({ ...previous, activityId, status: 'error', createdAt: Date.now(), error: msg, sentJson });
+    await upsertDebriefMessage(activityId, { status: 'error', error: msg });
   }
 }
 
@@ -86,7 +91,7 @@ export async function testApiKey(provider: Provider, model: string, apiKey: stri
     const res = await callLlm({
       provider, model, apiKey,
       system: 'Tu réponds uniquement par le JSON demandé.',
-      user: 'Test de connexion : renvoie {"ok": true}.',
+      messages: [{ role: 'user', text: 'Test de connexion : renvoie {"ok": true}.' }],
       schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false },
       maxTokens: 1000,
     });

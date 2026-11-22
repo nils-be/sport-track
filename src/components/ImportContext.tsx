@@ -49,7 +49,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       const ids = res.filter((r) => r.status === 'imported' && r.activityId).map((r) => r.activityId!);
       if (!ids.length) setPlan({ kind: 'none' });
       else if (!(await hasApiKey((await getSettings()).llm.provider))) setPlan({ kind: 'no-key' });
-      else if (ids.length <= AUTO_DEBRIEF_MAX) { void enqueueDebriefs(ids); setPlan({ kind: 'auto', count: ids.length }); }
+      else if (ids.length <= AUTO_DEBRIEF_MAX) { void enqueueDebriefs(ids); setPlan({ kind: 'auto', count: ids.length }); navigate('/'); }
       else setPlan({ kind: 'ask', ids });
     } finally {
       setImporting(false);
@@ -83,14 +83,14 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         }}
       />
       {importing && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 backdrop-blur-[2px]">
+        <div className="overlay-in fixed inset-0 z-50 grid place-items-center bg-black/30 backdrop-blur-[2px]">
           <div className="card flex items-center gap-3 px-5 py-4">
             <span className="size-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
             Analyse en cours…
           </div>
         </div>
       )}
-      {results && <ResultsSheet results={results} plan={plan} onPlan={setPlan} onClose={() => setResults(null)} />}
+      {results && <ResultsSheet results={results} plan={plan} onPlan={setPlan} onClose={() => setResults(null)} onGoCoach={() => navigate('/')} />}
     </Ctx.Provider>
   );
 }
@@ -102,11 +102,11 @@ const STATUS = {
   error: { icon: 'x', cls: 'text-red-600 dark:text-red-400' },
 } as const;
 
-function DebriefNotice({ plan, onPlan, onClose }: { plan: DebriefPlan; onPlan: (p: DebriefPlan) => void; onClose: () => void }) {
+function DebriefNotice({ plan, onPlan, onClose, onGoCoach }: { plan: DebriefPlan; onPlan: (p: DebriefPlan) => void; onClose: () => void; onGoCoach: () => void }) {
   if (plan.kind === 'none') return null;
   const box = 'mt-3 rounded-xl bg-accent-soft/60 p-3 text-sm dark:bg-accent-soft/40';
   if (plan.kind === 'auto') {
-    return <p className={box}>Débrief{plan.count > 1 ? 's' : ''} du coach en cours de génération… Tu peux continuer à utiliser l’app.</p>;
+    return <p className={box}>Le coach prépare {plan.count > 1 ? 'les débriefs' : 'le débrief'} : {plan.count > 1 ? 'ils arrivent' : 'il arrive'} dans votre fil de discussion.</p>;
   }
   if (plan.kind === 'no-key') {
     return (
@@ -125,7 +125,7 @@ function DebriefNotice({ plan, onPlan, onClose }: { plan: DebriefPlan; onPlan: (
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button className="h-10 rounded-lg bg-accent px-3 font-medium text-white dark:text-slate-950"
-          onClick={() => { void enqueueDebriefs(plan.ids); onPlan({ kind: 'auto', count: n }); }}>
+          onClick={() => { void enqueueDebriefs(plan.ids); onPlan({ kind: 'auto', count: n }); onGoCoach(); }}>
           Toutes ({n})
         </button>
         <button className="card h-10 px-3 font-medium"
@@ -134,6 +134,7 @@ function DebriefNotice({ plan, onPlan, onClose }: { plan: DebriefPlan; onPlan: (
             const latest = [...plan.ids].sort((a, b) => a.slice(a.indexOf('-') + 1).localeCompare(b.slice(b.indexOf('-') + 1))).slice(-1);
             void enqueueDebriefs(latest);
             onPlan({ kind: 'auto', count: 1 });
+            onGoCoach();
           }}>
           Seulement la plus récente
         </button>
@@ -143,12 +144,12 @@ function DebriefNotice({ plan, onPlan, onClose }: { plan: DebriefPlan; onPlan: (
   );
 }
 
-function ResultsSheet({ results, plan, onPlan, onClose }: { results: ImportResult[]; plan: DebriefPlan; onPlan: (p: DebriefPlan) => void; onClose: () => void }) {
+function ResultsSheet({ results, plan, onPlan, onClose, onGoCoach }: { results: ImportResult[]; plan: DebriefPlan; onPlan: (p: DebriefPlan) => void; onClose: () => void; onGoCoach: () => void }) {
   const ok = results.filter((r) => r.status === 'imported').length;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
       <div
-        className="card max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-b-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-2xl"
+        className="sheet-in card max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-b-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Résultat de l'import"
@@ -175,7 +176,7 @@ function ResultsSheet({ results, plan, onPlan, onClose }: { results: ImportResul
             );
           })}
         </ul>
-        <DebriefNotice plan={plan} onPlan={onPlan} onClose={onClose} />
+        <DebriefNotice plan={plan} onPlan={onPlan} onClose={onClose} onGoCoach={onGoCoach} />
         <button onClick={onClose} className="mt-4 h-12 w-full rounded-xl bg-slate-900 font-medium text-white dark:bg-slate-100 dark:text-slate-900">
           Fermer
         </button>

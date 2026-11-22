@@ -1,24 +1,22 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { db } from '../lib/db';
 import { ANALYSIS_VERSION } from '../lib/analysis/version';
+import { db } from '../lib/db';
 import { recoverInterrupted, useDebriefQueue } from '../lib/llm/queue';
 import Icon, { type IconName } from './Icon';
 import { ImportProvider, useImport } from './ImportContext';
 
-const TABS_LEFT: { to: string; label: string; icon: IconName }[] = [
-  { to: '/', label: 'Accueil', icon: 'home' },
-  { to: '/plan', label: 'Plan', icon: 'calendar' },
-];
-const TABS_RIGHT: { to: string; label: string; icon: IconName }[] = [
-  { to: '/seances', label: 'Séances', icon: 'list' },
-  { to: '/progression', label: 'Progrès', icon: 'chart' },
+const TABS: { to: string; label: string; icon: IconName; match: (p: string) => boolean }[] = [
+  { to: '/', label: 'Coach', icon: 'coach', match: (p) => p === '/' },
+  { to: '/seances', label: 'Séances', icon: 'list', match: (p) => p.startsWith('/seance') },
+  { to: '/progression', label: 'Progrès', icon: 'chart', match: (p) => p.startsWith('/progression') },
 ];
 
 export default function Layout() {
   const { pathname } = useLocation();
-  // Chaque écran s'ouvre en haut de page, comme dans une application.
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
+  // Chaque écran s'ouvre en haut de page (le Coach se place lui-même en bas du fil).
+  useEffect(() => { if (pathname !== '/') window.scrollTo(0, 0); }, [pathname]);
 
   useEffect(() => {
     void recoverInterrupted();
@@ -32,61 +30,52 @@ export default function Layout() {
 
   return (
     <ImportProvider>
-      <QueueBanner />
       <main className="mx-auto min-h-dvh max-w-2xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
-        <Outlet />
+        {/* La clé force l'animation d'entrée à chaque changement d'écran. */}
+        <div key={pathname} className="page-in">
+          <Outlet />
+        </div>
       </main>
-      <BottomNav />
+      <FloatingNav pathname={pathname} />
     </ImportProvider>
   );
 }
 
-/** Bandeau discret pendant la génération de débriefs. */
-function QueueBanner() {
-  const q = useDebriefQueue();
-  if (!q.running) return null;
-  const total = q.done + 1 + q.pending.length;
-  return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
-      <div className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs text-white shadow-lg dark:bg-slate-100 dark:text-slate-900">
-        <span className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-        Débrief en cours{total > 1 ? ` (${q.done + 1}/${total})` : '…'}
-      </div>
-    </div>
-  );
-}
-
-function Tab({ to, label, icon }: { to: string; label: string; icon: IconName }) {
-  return (
-    <NavLink to={to} end={to === '/'} className="flex flex-1 flex-col items-center justify-center gap-1">
-      {({ isActive }) => (
-        <>
-          <span className={`grid h-8 w-14 place-items-center rounded-full transition-colors ${isActive ? 'bg-accent-soft text-accent' : 'text-slate-500 dark:text-slate-400'}`}>
-            <Icon name={icon} className="size-[22px]" />
-          </span>
-          <span className={`text-[11px] leading-none ${isActive ? 'font-semibold text-slate-900 dark:text-slate-100' : 'muted'}`}>{label}</span>
-        </>
-      )}
-    </NavLink>
-  );
-}
-
-function BottomNav() {
+function FloatingNav({ pathname }: { pathname: string }) {
   const { openPicker } = useImport();
+  const queue = useDebriefQueue();
+  const pendingChat = useLiveQuery(() => db.messages.filter((m) => m.status === 'pending').count(), []);
+  const active = TABS.findIndex((t) => t.match(pathname));
+  const coachBusy = !!queue.running || !!pendingChat;
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md dark:border-slate-800 dark:bg-[#0f172a]/95">
-      <div className="mx-auto flex h-[4.5rem] max-w-2xl items-stretch">
-        {TABS_LEFT.map((t) => <Tab key={t.to} {...t} />)}
-        <div className="flex flex-1 items-center justify-center">
-          <button
-            onClick={() => { navigator.vibrate?.(8); openPicker(); }}
-            aria-label="Importer des séances"
-            className="grid size-14 -translate-y-3 place-items-center rounded-2xl bg-accent text-white shadow-lg shadow-accent/30 transition-transform active:scale-95 dark:text-slate-950"
-          >
-            <Icon name="plus" className="size-7" />
-          </button>
+    <nav className="floating-nav fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="mx-auto flex max-w-md items-center gap-3">
+        <div className="relative flex h-16 flex-1 items-center rounded-full bg-white/80 p-1.5 shadow-xl shadow-slate-900/10 ring-1 ring-slate-200/80 backdrop-blur-xl dark:bg-slate-900/80 dark:shadow-black/40 dark:ring-slate-700/70">
+          {/* Pastille qui glisse sous l'onglet actif. */}
+          <span
+            aria-hidden="true"
+            className="nav-pill absolute top-1.5 bottom-1.5 left-1.5 rounded-full bg-accent-soft"
+            style={{ width: 'calc((100% - 0.75rem) / 3)', transform: `translateX(${Math.max(active, 0) * 100}%)`, opacity: active < 0 ? 0 : 1 }}
+          />
+          {TABS.map((t, i) => (
+            <NavLink key={t.to} to={t.to} end={t.to === '/'}
+              className={`relative z-10 flex h-full flex-1 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] transition-colors duration-300 ${i === active ? 'font-semibold text-accent' : 'text-slate-500 dark:text-slate-400'}`}>
+              <span className="relative">
+                <Icon name={t.icon} className={`size-[22px] transition-transform duration-300 ${i === active ? 'scale-110' : ''}`} />
+                {t.to === '/' && coachBusy && <span className="absolute -top-0.5 -right-1 size-2 animate-pulse rounded-full bg-accent ring-2 ring-white dark:ring-slate-900" />}
+              </span>
+              {t.label}
+            </NavLink>
+          ))}
         </div>
-        {TABS_RIGHT.map((t) => <Tab key={t.to} {...t} />)}
+        <button
+          onClick={() => { navigator.vibrate?.(8); openPicker(); }}
+          aria-label="Importer des séances"
+          className="grid size-16 shrink-0 place-items-center rounded-full bg-accent text-white shadow-xl shadow-accent/30 transition-transform duration-150 active:scale-90 dark:text-slate-950"
+        >
+          <Icon name="plus" className="size-7" />
+        </button>
       </div>
     </nav>
   );

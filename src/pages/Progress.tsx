@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Scatter, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Scatter, XAxis, YAxis } from 'recharts';
 import AppBar from '../components/AppBar';
-import { AXIS, ChartReadout, ScrubCursor, useChartScrub, Val } from '../components/Charts';
+import { AXIS, ChartCarousel, ChartReadout, pickCategory, pickNumeric, useChartScrub, Val } from '../components/Charts';
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
 import { fmtDate, fmtDuration, fmtDurationShort, fmtKm, fmtMeters, fmtPace } from '../lib/format';
@@ -46,44 +46,35 @@ export default function Progress() {
         </div>
       </div>
 
-      <section className="card grid grid-cols-3 gap-2 p-4 text-center">
-        <div><p className="muted text-xs">Séances</p><p className="text-xl font-semibold">{tot.count}</p></div>
-        <div><p className="muted text-xs">Distance</p><p className="text-xl font-semibold">{run ? fmtKm(tot.distanceM).replace(' km', '') : fmtMeters(tot.distanceM).replace(' m', '')}</p><p className="muted text-xs">{run ? 'km' : 'm'}</p></div>
-        <div><p className="muted text-xs">Temps</p><p className="text-xl font-semibold">{fmtDurationShort(tot.durationS)}</p></div>
-      </section>
+      <p className="muted px-1 text-sm">
+        {tot.count} séance{tot.count > 1 ? 's' : ''} · <b className="text-slate-900 dark:text-slate-100">{run ? fmtKm(tot.distanceM) : fmtMeters(tot.distanceM)}</b> · {fmtDurationShort(tot.durationS)}
+      </p>
 
-      <section className="card p-4">
-        <h2 className="mb-2 font-semibold">Volume hebdomadaire</h2>
-        <WeeklyChart acts={all} sport={sport} weeks={weeks} color={color} />
-      </section>
-
-      <section className="card p-4">
-        <h2 className="font-semibold">Évolution de l’allure</h2>
-        <p className="muted mb-2 text-xs">
-          {run ? 'Allure moyenne des sorties continues (hors fractionné). Ligne : moyenne glissante sur 4 séances.' : 'Allure moyenne au 100 m (hors repos). Ligne : moyenne glissante sur 4 séances.'}
-        </p>
-        <PaceChart acts={inPeriod} sport={sport} color={color} />
-      </section>
+      <ChartCarousel key={`${sport}-${weeks}`} slides={[
+        { title: 'Volume par semaine', render: (v) => <WeeklyChart acts={all} sport={sport} weeks={weeks} color={color} visible={v} /> },
+        { title: 'Évolution de l’allure', render: (v) => <PaceChart acts={inPeriod} sport={sport} color={color} visible={v} /> },
+      ]} />
 
       <Records acts={all} sport={sport} />
     </div>
   );
 }
 
-function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: Sport; weeks: number; color: string }) {
-  const scrub = useChartScrub();
+function WeeklyChart({ acts, sport, weeks, color, visible }: { acts: Activity[]; sport: Sport; weeks: number; color: string; visible: boolean }) {
   const data = useMemo(() => weeklyVolumes(acts, sport, weeks).map((w) => ({
     label: shortDate.format(w.start),
     v: sport === 'running' ? Math.round(w.distanceM / 100) / 10 : Math.round(w.distanceM),
     count: w.count,
     dur: w.durationS,
   })), [acts, sport, weeks]);
+  const scrub = useChartScrub(visible, pickCategory(data.length));
   const unit = sport === 'running' ? 'km' : 'm';
   const p = scrub.index != null ? data[scrub.index] : null;
   return (
-    <div className="text-slate-500 dark:text-slate-400" {...scrub.wrapperProps}>
+    <div {...scrub.wrapperProps} className="text-slate-500 dark:text-slate-400">
       <ChartReadout
-        legend={[[color, `Distance par semaine (${unit})`]]}
+        onClear={scrub.clear}
+        summary={<>Moyenne {(data.reduce((a, d) => a + d.v, 0) / Math.max(data.length, 1)).toLocaleString('fr-FR', { maximumFractionDigits: sport === 'running' ? 1 : 0 })} {unit} / semaine</>}
         reading={p && (
           <>
             <span className="muted">Semaine du {p.label}</span>
@@ -93,11 +84,10 @@ function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: S
         )}
       />
       <ResponsiveContainer width="100%" height={190}>
-        <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -12 }} {...scrub.chartProps}>
+        <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.15} />
           <XAxis dataKey="label" tick={AXIS} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
           <YAxis tick={AXIS} tickLine={false} axisLine={false} width={44} />
-          <ScrubCursor active={scrub.index != null} bar />
           <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
             {data.map((_, i) => <Cell key={i} fill={color} fillOpacity={scrub.index == null || scrub.index === i ? 1 : 0.45} />)}
           </Bar>
@@ -107,8 +97,7 @@ function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: S
   );
 }
 
-function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; color: string }) {
-  const scrub = useChartScrub();
+function PaceChart({ acts, sport, color, visible }: { acts: Activity[]; sport: Sport; color: string; visible: boolean }) {
   const data = useMemo(() => {
     const pts = acts
       .map((a) => ({ t: a.startTime, pace: sport === 'running' ? (a.running?.isInterval ? null : a.running?.avgPaceSPerKm) : a.swimming?.avgPace100S, dist: a.distanceM }))
@@ -118,6 +107,7 @@ function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; col
       return { ...p, trend: win.reduce((s, x) => s + x.pace, 0) / win.length };
     });
   }, [acts, sport]);
+  const scrub = useChartScrub(visible, pickNumeric(data.map((d) => d.t)));
 
   if (data.length < 2) return <p className="muted py-6 text-center text-sm">Pas encore assez de séances sur la période.</p>;
   const paces = data.map((d) => d.pace);
@@ -125,9 +115,10 @@ function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; col
   const unit = sport === 'running' ? '/km' : '/100 m';
   const p = scrub.index != null ? data[scrub.index] : null;
   return (
-    <div className="text-slate-500 dark:text-slate-400" {...scrub.wrapperProps}>
+    <div {...scrub.wrapperProps} className="text-slate-500 dark:text-slate-400">
       <ChartReadout
-        legend={[[color, 'Séance'], [color, 'Tendance (4 séances)']]}
+        onClear={scrub.clear}
+        summary={<>{sport === 'running' ? 'Sorties continues' : 'Allure au 100 m'} · ligne = tendance · plus haut = plus rapide</>}
         reading={p && (
           <>
             <span className="muted">{fmtDate(p.t)} · {sport === 'running' ? `${(p.dist / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(p.dist)} m`}</span>
@@ -137,16 +128,15 @@ function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; col
         )}
       />
       <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -8 }} {...scrub.chartProps}>
+        <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.15} />
           <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} tick={AXIS} tickLine={false} tickFormatter={(t: number) => shortDate.format(t)} minTickGap={30} />
           <YAxis reversed domain={[lo, hi]} tick={AXIS} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => fmtPace(v)} />
-          <ScrubCursor active={scrub.index != null} />
+          {p && <ReferenceLine x={p.t} stroke="currentColor" strokeOpacity={0.5} />}
           <Scatter dataKey="pace" fill={color} isAnimationActive={false} />
           <Line dataKey="trend" stroke={color} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
-      <p className="mt-1 text-center text-[11px]">Plus haut = plus rapide</p>
     </div>
   );
 }

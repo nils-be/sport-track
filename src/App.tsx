@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
-import Home from './pages/Home';
+import Coach from './pages/Coach';
 import Activities from './pages/Activities';
 import Notebook from './pages/Notebook';
 import Settings from './pages/Settings';
@@ -9,7 +9,6 @@ import Settings from './pages/Settings';
 // Le détail embarque Recharts : chargé à la demande.
 const ActivityDetail = lazy(() => import('./pages/ActivityDetail'));
 const Progress = lazy(() => import('./pages/Progress'));
-const Plan = lazy(() => import('./pages/Plan'));
 
 // HashRouter : compatible GitHub Pages sans configuration de redirection.
 export default function App() {
@@ -17,9 +16,8 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Home />} />
+          <Route index element={<Coach />} />
           <Route path="seances" element={<Activities />} />
-          <Route path="plan" element={<Suspense fallback={null}><Plan /></Suspense>} />
           <Route path="carnet" element={<Notebook />} />
           <Route path="progression" element={<Suspense fallback={null}><Progress /></Suspense>} />
           <Route path="reglages" element={<Settings />} />

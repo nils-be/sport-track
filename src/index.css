@@ -89,3 +89,68 @@ a {
 .pressable {
   @apply transition-transform duration-100 active:scale-[0.98] active:opacity-80;
 }
+
+/* ───────────── Animations (désactivées si l'appareil demande moins de mouvement) ───────────── */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+/* « backwards » : rien ne reste appliqué après l'animation (un transform maintenu casserait les éléments fixed). */
+.page-in { animation: page-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.msg-in { animation: msg-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.overlay-in { animation: fade-in 200ms ease-out both; }
+.sheet-in { animation: sheet-up 300ms cubic-bezier(0.2, 0.9, 0.25, 1) backwards; }
+.typing-dots i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: currentColor;
+  color: var(--color-accent);
+  animation: dot-bounce 1.2s infinite ease-in-out;
+}
+.typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+.nav-pill { transition: transform 380ms cubic-bezier(0.3, 1.25, 0.45, 1), opacity 200ms; }
+
+/* Barre de navigation flottante, masquée pendant la saisie (clavier ouvert). */
+.floating-nav { transition: transform 250ms ease, opacity 200ms ease; }
+body[data-typing] .floating-nav { transform: translateY(120%); opacity: 0; pointer-events: none; }
+/* Zone de saisie du coach : au-dessus de la barre, ou tout en bas pendant la saisie. */
+.composer {
+  bottom: calc(env(safe-area-inset-bottom) + 5.5rem);
+  transition: bottom 250ms ease;
+}
+body[data-typing] .composer { bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Graphiques : pas de cadre de focus au tap. */
+.recharts-wrapper:focus,
+.recharts-wrapper *:focus,
+.recharts-surface:focus {
+  outline: none;
+}

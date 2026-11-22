@@ -1,6 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { Link } from 'react-router-dom';
-import { db } from '../lib/db';
 import type { Activity } from '../lib/analysis/types';
 import { activityTitle, fmtDate, fmtDistance, fmtDurationShort, fmtTime, mainPace } from '../lib/format';
 import Icon from './Icon';
@@ -15,7 +13,6 @@ export function SportBadge({ sport, className = 'size-10' }: { sport: Activity['
 }
 
 export default function ActivityCard({ a }: { a: Activity }) {
-  const d = useLiveQuery(() => db.debriefs.get(a.id), [a.id]);
   return (
     <Link to={`/seance/${encodeURIComponent(a.id)}`} className="card pressable flex items-center gap-3 p-3">
       <SportBadge sport={a.sport} />
@@ -30,13 +27,6 @@ export default function ActivityCard({ a }: { a: Activity }) {
           <span className="muted">{mainPace(a)}</span>
           {a.avgHr != null && <span className="muted hidden min-[380px]:inline">{a.avgHr} bpm</span>}
         </div>
-        {d?.status === 'pending' ? (
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-accent">
-            <span className="size-3 animate-spin rounded-full border-2 border-accent border-t-transparent" /> Débrief en cours…
-          </p>
-        ) : d?.content ? (
-          <p className="muted mt-1 line-clamp-2 text-[13px] leading-snug">{d.content.titre}</p>
-        ) : null}
       </div>
     </Link>
   );
