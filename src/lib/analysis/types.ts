@@ -28,6 +28,8 @@ export interface RunLap extends LapKindInfo {
   startOffsetS: number;
   durationS: number;
   distanceM: number;
+  /** Distance mesurée par la montre, si l'utilisateur l'a corrigée. */
+  originalDistanceM?: number;
   paceSPerKm: number | null;
   avgHr: number | null;
   maxHr: number | null;
@@ -107,6 +109,9 @@ export interface SwimSet {
   kind: 'swim' | 'rest';
   startOffsetS: number;
   durationS: number;
+  /** Valeurs détectées par la montre, si l'utilisateur a corrigé la série. */
+  originalDistanceM?: number;
+  originalLengths?: number;
   distanceM: number;
   lengths: number;
   stroke: SwimStroke | null;
@@ -170,6 +175,10 @@ export interface Activity {
   extras: Extras;
   /** Parcours GPS simplifié [lat, lon] (stocké seulement sur l'appareil), ou null sans GPS. */
   route?: [number, number][] | null;
+  /** Corrections manuelles (distance d'une série ou d'un tour), réappliquées après chaque réanalyse. */
+  corrections?: Corrections;
+  /** Distance totale mesurée par la montre, si des corrections l'ont modifiée. */
+  originalDistanceM?: number;
   /** Version de l'algorithme d'analyse, pour pouvoir réanalyser plus tard. */
   analysisVersion: number;
 }
@@ -184,4 +193,10 @@ export interface ActivityStreams {
   speedMs: (number | null)[];
   hr: (number | null)[];
   altitudeM: (number | null)[];
+}
+
+/** Corrections manuelles : nombre de longueurs par série (natation), distance en mètres par tour (course). Clé = index. */
+export interface Corrections {
+  swimSets?: Record<number, number>;
+  runLaps?: Record<number, number>;
 }

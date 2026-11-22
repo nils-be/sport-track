@@ -8,7 +8,10 @@ import DebriefCard from '../components/DebriefCard';
 import Icon from '../components/Icon';
 import RouteMap from '../components/RouteMap';
 import ZoneBars from '../components/ZoneBars';
-import type { Activity, RunningAnalysis, SwimmingAnalysis } from '../lib/analysis/types';
+import CorrectionSheet from '../components/CorrectionSheet';
+import { useLongPress } from '../components/useLongPress';
+import type { Activity, RunLap, RunningAnalysis, SwimmingAnalysis, SwimSet } from '../lib/analysis/types';
+import { saveCorrection } from '../lib/corrections';
 import { db, deleteActivity } from '../lib/db';
 import {
   activityTitle, fmtDateLong, fmtDistance, fmtDuration, fmtKm, fmtMeters, fmtNum, fmtPace, fmtTime,
@@ -84,7 +87,8 @@ function KeyStats({ a }: { a: Activity }) {
   const r = a.running, s = a.swimming;
   return (
     <section className="card grid grid-cols-3 gap-x-3 gap-y-4 p-4">
-      <Stat label="Distance" value={fmtDistance(a)} />
+      <Stat label="Distance" value={fmtDistance(a)}
+        sub={a.originalDistanceM != null ? `corrigée (${a.sport === 'swimming' ? fmtMeters(a.originalDistanceM) : fmtKm(a.originalDistanceM)})` : undefined} />
       <Stat label="Durée" value={fmtDuration(a.durationS)} sub={a.elapsedS - a.durationS > 30 ? `${fmtDuration(a.elapsedS)} écoulé` : undefined} />
       {r && <Stat label="Allure moy." value={fmtPace(r.avgPaceSPerKm)} sub="/km" />}
       {s && <Stat label="Allure moy." value={fmtPace(s.avgPace100S)} sub="/100 m" />}
@@ -119,7 +123,7 @@ function RunTabs({ a, r }: { a: Activity; r: RunningAnalysis }) {
     <section className="card p-4">
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div key={tab} className="page-in">
-        {tab === 'laps' && <LapsTable r={r} />}
+        {tab === 'laps' && <LapsTable r={r} activityId={a.id} />}
         {tab === 'km' && <KmTable r={r} />}
         {tab === 'zones' && a.hrZones && <ZoneBars zones={a.hrZones} />}
       </div>
@@ -134,7 +138,7 @@ function SwimTabs({ a, s }: { a: Activity; s: SwimmingAnalysis }) {
     <section className="card p-4">
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       <div key={tab} className="page-in">
-        {tab === 'sets' && <SetsTable s={s} />}
+        {tab === 'sets' && <SetsTable s={s} activityId={a.id} />}
         {tab === 'zones' && a.hrZones && <ZoneBars zones={a.hrZones} />}
       </div>
     </section>
@@ -152,27 +156,50 @@ function KindTag({ kind }: { kind: RunningAnalysis['laps'][number]['kind'] }) {
   return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${cls}`}>{LAP_KIND_LABEL[kind]}</span>;
 }
 
-function LapsTable({ r }: { r: RunningAnalysis }) {
+/** Marque discrète d'une valeur corrigée à la main. */
+const Corrected = ({ title }: { title: string }) => (
+  <span title={title} aria-label={title} className="ml-1 inline-flex align-middle text-accent"><Icon name="edit" className="size-3" /></span>
+);
+
+function LapRow({ l, onLong }: { l: RunLap; onLong: () => void }) {
+  const press = useLongPress(onLong);
   return (
+    <tr {...press} className={`border-b border-slate-100 select-none last:border-0 active:bg-slate-50 dark:border-slate-800/60 dark:active:bg-slate-800/40 ${l.kind === 'recovery' || l.kind === 'rest' ? 'muted' : ''}`}>
+      <td className={td}><div className="flex items-center gap-1.5">{l.index}<KindTag kind={l.kind} /></div></td>
+      <td className={td}>
+        {l.distanceM >= 1000 ? fmtKm(l.distanceM) : fmtMeters(l.distanceM)}
+        {l.originalDistanceM != null && <Corrected title={`Corrigé (montre : ${Math.round(l.originalDistanceM)} m)`} />}
+      </td>
+      <td className={td}>{fmtDuration(l.durationS)}</td>
+      <td className={`${td} font-medium`}>{fmtPace(l.paceSPerKm)}</td>
+      <td className={td}>{fmtNum(l.avgHr)}</td>
+      <td className={td}>{fmtNum(l.cadenceSpm)}</td>
+    </tr>
+  );
+}
+
+function LapsTable({ r, activityId }: { r: RunningAnalysis; activityId: string }) {
+  const [editing, setEditing] = useState<RunLap | null>(null);
+  return (
+    <>
     <div className="-mx-2 overflow-x-auto">
       <table className="w-full text-sm">
         <thead><tr className="border-b border-slate-200 dark:border-slate-800">
           <th className={th}>#</th><th className={th}>Dist.</th><th className={th}>Temps</th><th className={th}>Allure</th><th className={th}>FC</th><th className={th}>Cad.</th>
         </tr></thead>
         <tbody>
-          {r.laps.map((l) => (
-            <tr key={l.index} className={`border-b border-slate-100 last:border-0 dark:border-slate-800/60 ${l.kind === 'recovery' || l.kind === 'rest' ? 'muted' : ''}`}>
-              <td className={td}><div className="flex items-center gap-1.5">{l.index}<KindTag kind={l.kind} /></div></td>
-              <td className={td}>{l.distanceM >= 1000 ? fmtKm(l.distanceM) : fmtMeters(l.distanceM)}</td>
-              <td className={td}>{fmtDuration(l.durationS)}</td>
-              <td className={`${td} font-medium`}>{fmtPace(l.paceSPerKm)}</td>
-              <td className={td}>{fmtNum(l.avgHr)}</td>
-              <td className={td}>{fmtNum(l.cadenceSpm)}</td>
-            </tr>
-          ))}
+          {r.laps.map((l) => <LapRow key={l.index} l={l} onLong={() => setEditing(l)} />)}
         </tbody>
       </table>
     </div>
+    <p className="muted mt-2 text-xs">Appui long sur un tour pour corriger sa distance.</p>
+    {editing && (
+      <CorrectionSheet title={`Corriger le tour ${editing.index}`} mode="meters" durationS={editing.durationS}
+        original={Math.round(editing.originalDistanceM ?? editing.distanceM)} current={Math.round(editing.distanceM)}
+        onClose={() => setEditing(null)}
+        onSave={async (v) => { await saveCorrection(activityId, 'runLaps', editing.index, v); setEditing(null); }} />
+    )}
+    </>
   );
 }
 
@@ -202,8 +229,9 @@ function KmTable({ r }: { r: RunningAnalysis }) {
 
 // ---------------------------------------------------------------- Natation
 
-function SetsTable({ s }: { s: SwimmingAnalysis }) {
+function SetsTable({ s, activityId }: { s: SwimmingAnalysis; activityId: string }) {
   const [open, setOpen] = useState<number | null>(null);
+  const [editing, setEditing] = useState<SwimSet | null>(null);
   return (
     <>
         <div className="-mx-2 overflow-x-auto">
@@ -223,11 +251,14 @@ function SetsTable({ s }: { s: SwimmingAnalysis }) {
                 const lengths = s.lengths.filter((l) => l.setIndex === x.index && l.active);
                 const isOpen = open === x.index;
                 return (
-                  <SetRows key={x.index} isOpen={isOpen} onToggle={() => setOpen(isOpen ? null : x.index)}
+                  <SetRows key={x.index} isOpen={isOpen} onToggle={() => setOpen(isOpen ? null : x.index)} onLong={() => setEditing(x)}
                     row={
                       <>
                         <td className={td}>
-                          <p className="font-medium">{fmtMeters(x.distanceM)}</p>
+                          <p className="font-medium">
+                            {fmtMeters(x.distanceM)}
+                            {x.originalDistanceM != null && <Corrected title={`Corrigé (montre : ${x.originalDistanceM} m)`} />}
+                          </p>
                           <p className="muted text-xs">{x.stroke ? STROKE_LABEL[x.stroke] : ''}</p>
                         </td>
                         <td className={td}>{fmtDuration(x.durationS)}</td>
@@ -252,15 +283,22 @@ function SetsTable({ s }: { s: SwimmingAnalysis }) {
             </tbody>
           </table>
         </div>
-        <p className="muted mt-2 text-xs">Touche une série pour voir ses longueurs.</p>
+        <p className="muted mt-2 text-xs">Touche une série pour voir ses longueurs · appui long pour corriger sa distance.</p>
+        {editing && (
+          <CorrectionSheet title={`Corriger la série de ${editing.originalDistanceM ?? editing.distanceM} m`} mode="lengths" poolLengthM={s.poolLengthM}
+            durationS={editing.durationS} original={editing.originalLengths ?? editing.lengths} current={editing.lengths}
+            onClose={() => setEditing(null)}
+            onSave={async (v) => { await saveCorrection(activityId, 'swimSets', editing.index, v); setEditing(null); }} />
+        )}
     </>
   );
 }
 
-function SetRows({ row, details, isOpen, onToggle }: { row: ReactNode; details: ReactNode; isOpen: boolean; onToggle: () => void }) {
+function SetRows({ row, details, isOpen, onToggle, onLong }: { row: ReactNode; details: ReactNode; isOpen: boolean; onToggle: () => void; onLong: () => void }) {
+  const press = useLongPress(onLong);
   return (
     <>
-      <tr onClick={onToggle} className="cursor-pointer border-b border-slate-100 last:border-0 dark:border-slate-800/60">
+      <tr {...press} onClick={onToggle} className="cursor-pointer border-b border-slate-100 select-none last:border-0 active:bg-slate-50 dark:border-slate-800/60 dark:active:bg-slate-800/40">
         {row}
         <td className="muted"><Icon name={isOpen ? 'down' : 'chevron'} className="size-4" /></td>
       </tr>

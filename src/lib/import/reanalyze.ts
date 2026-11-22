@@ -1,4 +1,5 @@
 import { analyzeFit } from '../analysis/analyze';
+import { applyCorrections } from '../analysis/corrections';
 import { db, getSettings } from '../db';
 import { decodeFit } from '../fit/decode';
 
@@ -14,7 +15,8 @@ export async function reanalyzeAll(onProgress?: (done: number, total: number) =>
       try {
         const { activity, streams } = analyzeFit(decodeFit(f.bytes), settings.zones);
         await db.transaction('rw', db.activities, db.streams, async () => {
-          await db.activities.put({ ...activity, id, importedAt: prev.importedAt });
+          // Les corrections manuelles de distance sont réappliquées après la réanalyse.
+          await db.activities.put(applyCorrections({ ...activity, id, importedAt: prev.importedAt }, prev.corrections));
           if (streams) await db.streams.put({ ...streams, activityId: id });
         });
       } catch (e) {
