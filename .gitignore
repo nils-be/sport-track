@@ -10,6 +10,6 @@ dev-dist/
 .env.*
 *.local
 coverage/
-
+.secrets/
 # Sauvegardes exportées depuis l'app (contiennent séances et traces GPS)
 sport-track-sauvegarde-*.json
