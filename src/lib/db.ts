@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Activity, ActivityStreams } from './analysis/types';
+import type { Activity, ActivityStreams, Sport } from './analysis/types';
 import { defaultZones, type ZoneSettings } from './analysis/common';
 import { DEFAULT_MODEL, type Provider } from './llm/models';
 
@@ -63,13 +63,50 @@ export interface NotebookVersion {
   activityId?: string;
 }
 
+export const SESSION_KINDS = ['footing', 'endurance', 'sortie_longue', 'tempo', 'fractionne', 'recup', 'technique', 'series'] as const;
+export type SessionKind = (typeof SESSION_KINDS)[number];
+
+/** Séance prévue dans un plan hebdomadaire. */
+export interface PlannedSession {
+  id: string;
+  /** Jour prévu (minuit local, ms). */
+  date: number;
+  sport: Sport;
+  kind: SessionKind;
+  title: string;
+  description: string;
+  durationMin: number | null;
+  distanceM: number | null;
+  intensity: string;
+  /** Lien manuel vers une séance réelle (null = délier explicitement ; absent = association automatique). */
+  linkedActivityId?: string | null;
+}
+
+/** Plan d'une semaine (lundi → dimanche). */
+export interface WeekPlan {
+  /** Lundi 0 h (ms). */
+  weekStart: number;
+  status: 'draft' | 'validated';
+  note: string;
+  summary: string;
+  sessions: PlannedSession[];
+  createdAt: number;
+  updatedAt: number;
+  provider?: Provider;
+  model?: string;
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  sentJson?: string;
+}
+
 export interface LlmCall {
   id?: number;
   at: number;
   provider: Provider;
   model: string;
   activityId?: string;
-  kind: 'debrief' | 'test';
+  kind: 'debrief' | 'test' | 'plan';
   ok: boolean;
   inputTokens: number;
   outputTokens: number;
@@ -86,6 +123,7 @@ class SportDB extends Dexie {
   debriefs!: EntityTable<Debrief, 'activityId'>;
   notebook!: EntityTable<NotebookVersion, 'id'>;
   llmCalls!: EntityTable<LlmCall, 'id'>;
+  plans!: EntityTable<WeekPlan, 'weekStart'>;
 
   constructor() {
     super('sport-track');
@@ -100,6 +138,9 @@ class SportDB extends Dexie {
       debriefs: 'activityId, status',
       notebook: '++id, createdAt',
       llmCalls: '++id, at',
+    });
+    this.version(3).stores({
+      plans: 'weekStart, status',
     });
   }
 }

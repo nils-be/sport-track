@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import AppBar from '../components/AppBar';
 import { useState } from 'react';
 import ActivityCard from '../components/ActivityCard';
 import type { Activity, Sport } from '../lib/analysis/types';
@@ -36,7 +37,7 @@ export default function Activities() {
 
   return (
     <div className="space-y-4">
-      <h1 className="pt-2 text-2xl font-bold">Séances</h1>
+      <AppBar title="Séances" />
       <div className="flex gap-2" role="tablist">
         {FILTERS.map((f) => (
           <button

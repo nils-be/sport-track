@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import AppBar from '../components/AppBar';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from '../components/Icon';
 import { defaultZones, type ZoneSettings } from '../lib/analysis/common';
@@ -19,7 +20,7 @@ export default function Settings() {
   if (!settings) return null;
   return (
     <div className="space-y-4">
-      <h1 className="pt-2 text-2xl font-bold">Réglages</h1>
+      <AppBar back="/" title="Réglages" />
       <LlmSection s={settings} />
       <ZonesSection s={settings} />
       <CostsSection />

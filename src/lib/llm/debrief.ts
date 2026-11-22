@@ -1,5 +1,7 @@
 import { db, getSettings, type DebriefContent } from '../db';
 import { currentNotebook, MAX_WORDS, saveNotebook, wordCount } from '../notebook';
+import { plannedSessionFor } from '../planMatch';
+import { weekStart } from '../stats';
 import { buildDebriefInput } from './context';
 import { estimateCost, type Provider } from './models';
 import { parseDebriefResponse, ParseError, RESPONSE_SCHEMA, SYSTEM_PROMPT } from './prompt';
@@ -40,7 +42,10 @@ export async function generateDebrief(activityId: string): Promise<void> {
     currentNotebook(),
   ]);
   const debriefMap = new Map<string, DebriefContent>(done.filter((d) => d.content).map((d) => [d.activityId, d.content!]));
-  const input = buildDebriefInput(activity, history, notebook.text, debriefMap);
+  // V2 : si la séance correspond à une séance prévue d'un plan validé, le coach compare au prévu.
+  const plan = await db.plans.get(weekStart(activity.startTime));
+  const planned = plannedSessionFor(activity.id, plan, history);
+  const input = buildDebriefInput(activity, history, notebook.text, debriefMap, planned);
   const sentJson = JSON.stringify(input);
 
   try {

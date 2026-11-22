@@ -17,7 +17,7 @@ export function SportBadge({ sport, className = 'size-10' }: { sport: Activity['
 export default function ActivityCard({ a }: { a: Activity }) {
   const d = useLiveQuery(() => db.debriefs.get(a.id), [a.id]);
   return (
-    <Link to={`/seance/${encodeURIComponent(a.id)}`} className="card flex items-center gap-3 p-3 active:scale-[0.99] transition">
+    <Link to={`/seance/${encodeURIComponent(a.id)}`} className="card pressable flex items-center gap-3 p-3">
       <SportBadge sport={a.sport} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">

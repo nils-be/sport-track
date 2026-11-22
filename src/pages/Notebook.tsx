@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import AppBar from '../components/AppBar';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
@@ -37,10 +38,8 @@ export default function Notebook() {
 
   return (
     <div className="space-y-4">
-      <header className="pt-2">
-        <h1 className="text-2xl font-bold">Carnet du coach</h1>
-        <p className="muted text-sm">Ce que le coach sait de toi. Il le met à jour après chaque débrief, et tu peux le modifier (objectifs, douleurs, contraintes…).</p>
-      </header>
+      <AppBar back="/" title="Carnet du coach" />
+      <p className="muted -mt-2 text-sm">Ce que le coach sait de toi. Il le met à jour après chaque débrief, et tu peux le modifier (objectifs, douleurs, contraintes…).</p>
 
       <section className="card p-4">
         <div className="mb-3 flex items-start justify-between gap-2">
@@ -76,7 +75,7 @@ export default function Notebook() {
           </>
         ) : (
           <>
-            <div className="text-[15px] leading-relaxed whitespace-pre-wrap">{current.text}</div>
+            <div className="selectable text-[15px] leading-relaxed whitespace-pre-wrap">{current.text}</div>
             <div className="mt-3"><WordCount words={words} /></div>
           </>
         )}

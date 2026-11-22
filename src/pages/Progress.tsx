@@ -1,17 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bar, BarChart, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Scatter, XAxis, YAxis } from 'recharts';
+import AppBar from '../components/AppBar';
+import { AXIS, ChartReadout, ScrubCursor, useChartScrub, Val } from '../components/Charts';
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
 import { fmtDate, fmtDuration, fmtDurationShort, fmtKm, fmtMeters, fmtPace } from '../lib/format';
 import { longest, records, volumeOf, weeklyVolumes } from '../lib/stats';
 
-const AXIS = { fontSize: 11, fill: 'currentColor' };
-const tooltip = {
-  contentStyle: { background: 'var(--tt-bg)', border: '1px solid var(--tt-border)', borderRadius: 12, fontSize: 12 },
-  labelStyle: { color: 'inherit', fontWeight: 600 },
-};
 const PERIODS = [{ weeks: 13, label: '3 mois' }, { weeks: 26, label: '6 mois' }, { weeks: 52, label: '1 an' }];
 const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 
@@ -30,7 +27,7 @@ export default function Progress() {
 
   return (
     <div className="space-y-4">
-      <h1 className="pt-2 text-2xl font-bold">Progression</h1>
+      <AppBar title="Progression" />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
@@ -74,6 +71,7 @@ export default function Progress() {
 }
 
 function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: Sport; weeks: number; color: string }) {
+  const scrub = useChartScrub();
   const data = useMemo(() => weeklyVolumes(acts, sport, weeks).map((w) => ({
     label: shortDate.format(w.start),
     v: sport === 'running' ? Math.round(w.distanceM / 100) / 10 : Math.round(w.distanceM),
@@ -81,17 +79,28 @@ function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: S
     dur: w.durationS,
   })), [acts, sport, weeks]);
   const unit = sport === 'running' ? 'km' : 'm';
+  const p = scrub.index != null ? data[scrub.index] : null;
   return (
-    <div className="text-slate-500 dark:text-slate-400">
+    <div className="text-slate-500 dark:text-slate-400" {...scrub.wrapperProps}>
+      <ChartReadout
+        legend={[[color, `Distance par semaine (${unit})`]]}
+        reading={p && (
+          <>
+            <span className="muted">Semaine du {p.label}</span>
+            <Val color={color}>{p.v.toLocaleString('fr-FR')} {unit}</Val>
+            <span>{p.count} séance{p.count > 1 ? 's' : ''}{p.count ? ` · ${fmtDurationShort(p.dur)}` : ''}</span>
+          </>
+        )}
+      />
       <ResponsiveContainer width="100%" height={190}>
-        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
+        <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -12 }} {...scrub.chartProps}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.15} />
           <XAxis dataKey="label" tick={AXIS} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
           <YAxis tick={AXIS} tickLine={false} axisLine={false} width={44} />
-          <Tooltip {...tooltip} cursor={{ fill: 'currentColor', fillOpacity: 0.08 }}
-            labelFormatter={(l) => `Semaine du ${l}`}
-            formatter={(v, _n, p) => [`${Number(v).toLocaleString('fr-FR')} ${unit} · ${p.payload.count} séance${p.payload.count > 1 ? 's' : ''} · ${fmtDurationShort(p.payload.dur)}`, 'Volume']} />
-          <Bar dataKey="v" fill={color} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          <ScrubCursor active={scrub.index != null} bar />
+          <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+            {data.map((_, i) => <Cell key={i} fill={color} fillOpacity={scrub.index == null || scrub.index === i ? 1 : 0.45} />)}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -99,6 +108,7 @@ function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: S
 }
 
 function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; color: string }) {
+  const scrub = useChartScrub();
   const data = useMemo(() => {
     const pts = acts
       .map((a) => ({ t: a.startTime, pace: sport === 'running' ? (a.running?.isInterval ? null : a.running?.avgPaceSPerKm) : a.swimming?.avgPace100S, dist: a.distanceM }))
@@ -113,17 +123,27 @@ function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; col
   const paces = data.map((d) => d.pace);
   const lo = Math.floor((Math.min(...paces) - 10) / 15) * 15, hi = Math.ceil((Math.max(...paces) + 10) / 15) * 15;
   const unit = sport === 'running' ? '/km' : '/100 m';
+  const p = scrub.index != null ? data[scrub.index] : null;
   return (
-    <div className="text-slate-500 dark:text-slate-400">
+    <div className="text-slate-500 dark:text-slate-400" {...scrub.wrapperProps}>
+      <ChartReadout
+        legend={[[color, 'Séance'], [color, 'Tendance (4 séances)']]}
+        reading={p && (
+          <>
+            <span className="muted">{fmtDate(p.t)} · {sport === 'running' ? `${(p.dist / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(p.dist)} m`}</span>
+            <Val color={color}>{fmtPace(p.pace)} {unit}</Val>
+            <span>tendance {fmtPace(p.trend)} {unit}</span>
+          </>
+        )}
+      />
       <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -8 }}>
+        <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -8 }} {...scrub.chartProps}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.15} />
           <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} tick={AXIS} tickLine={false} tickFormatter={(t: number) => shortDate.format(t)} minTickGap={30} />
           <YAxis reversed domain={[lo, hi]} tick={AXIS} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => fmtPace(v)} />
-          <Tooltip {...tooltip} labelFormatter={(t) => fmtDate(Number(t))}
-            formatter={(v, n) => [`${fmtPace(Number(v))} ${unit}`, n === 'trend' ? 'Tendance' : 'Séance']} />
+          <ScrubCursor active={scrub.index != null} />
           <Scatter dataKey="pace" fill={color} isAnimationActive={false} />
-          <Line dataKey="trend" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+          <Line dataKey="trend" stroke={color} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
       <p className="mt-1 text-center text-[11px]">Plus haut = plus rapide</p>

@@ -3,8 +3,10 @@ import { computeHrZones, deviceName, hrSamples, ms, num, round, type ZoneSetting
 import { analyzeRunning, runPoints } from './running';
 import { analyzeSwimming } from './swimming';
 import type { Activity, ActivityStreams, Extras, Sport } from './types';
+import { ANALYSIS_VERSION } from './version';
 
-export const ANALYSIS_VERSION = 1;
+export { ANALYSIS_VERSION };
+
 
 export class UnsupportedSportError extends Error {}
 

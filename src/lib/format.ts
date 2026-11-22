@@ -100,3 +100,14 @@ export function fmtUsd(x: number | null | undefined): string {
   const digits = x === 0 ? 2 : x < 0.01 ? 4 : x < 1 ? 3 : 2;
   return `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(x)} $`;
 }
+
+export const KIND_LABEL: Record<import('./db').SessionKind, string> = {
+  footing: 'Footing',
+  endurance: 'Endurance',
+  sortie_longue: 'Sortie longue',
+  tempo: 'Tempo / seuil',
+  fractionne: 'Fractionné',
+  recup: 'Récupération',
+  technique: 'Technique',
+  series: 'Séries',
+};

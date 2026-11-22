@@ -12,24 +12,63 @@ export interface RunPoint {
   hr: number | null;
 }
 
-const PAUSE_GAP_S = 5;
+/** Écart entre deux points au-delà duquel on suppose une pause (seulement si le fichier n'a pas d'événements chrono). */
+const PAUSE_GAP_S = 15;
+/** Vitesse maximale plausible (6,5 m/s = 2:34/km) : au-delà, c'est un saut GPS. */
+const MAX_SPEED = 6.5;
 
+/** Intervalles où le chrono était arrêté, d'après les événements « timer » du fichier. */
+function timerPauses(messages: FitMessages): [number, number][] {
+  const pauses: [number, number][] = [];
+  let stoppedAt: number | null = null;
+  const events = (messages.eventMesgs ?? []).filter((e) => e.event === 'timer').sort((a, b) => (ms(a.timestamp) ?? 0) - (ms(b.timestamp) ?? 0));
+  for (const e of events) {
+    const t = ms(e.timestamp);
+    if (t == null) continue;
+    const type = String(e.eventType);
+    if (type.startsWith('stop') && stoppedAt == null) stoppedAt = t;
+    else if (type === 'start' && stoppedAt != null) { pauses.push([stoppedAt, t]); stoppedAt = null; }
+  }
+  return pauses;
+}
+
+/**
+ * Points de la trace en temps chrono, avec une distance « propre » :
+ * - le temps des pauses (événements chrono, sinon trous de plus de 15 s) est retiré ;
+ * - la distance gagnée pendant une pause ou plus vite que MAX_SPEED (saut GPS) est écrêtée.
+ * La montre peut n'enregistrer qu'un point toutes les quelques secondes (enregistrement intelligent).
+ */
 export function runPoints(messages: FitMessages): RunPoint[] {
   const pts: RunPoint[] = [];
+  const pauses = timerPauses(messages);
+  const pausedMsBetween = (a: number, b: number) =>
+    pauses.reduce((s, [ps, pe]) => s + Math.max(0, Math.min(b, pe) - Math.max(a, ps)), 0);
+
   let active = 0;
   let prevT: number | null = null;
+  let prevRaw: number | null = null;
+  let clean: number | null = null;
   for (const r of messages.recordMesgs ?? []) {
     const t = ms(r.timestamp);
     if (t == null) continue;
+    let activeDt = 0;
     if (prevT != null) {
       const dt = (t - prevT) / 1000;
-      active += dt <= PAUSE_GAP_S ? dt : 1; // un trou = pause du chrono
+      activeDt = pauses.length ? Math.max(0, dt - pausedMsBetween(prevT, t) / 1000) : dt <= PAUSE_GAP_S ? dt : 1;
+      active += activeDt;
     }
     prevT = t;
+
+    const raw = num(r.distance);
+    if (raw != null) {
+      if (clean == null || prevRaw == null) clean = raw;
+      else clean += Math.min(Math.max(0, raw - prevRaw), MAX_SPEED * activeDt);
+      prevRaw = raw;
+    }
     pts.push({
       t,
       activeS: active,
-      dist: num(r.distance),
+      dist: raw != null ? clean : null,
       speed: num(r.enhancedSpeed) ?? num(r.speed),
       alt: num(r.enhancedAltitude) ?? num(r.altitude),
       hr: num(r.heartRate),

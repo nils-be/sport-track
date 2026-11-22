@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import AppBar from '../components/AppBar';
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { SportBadge } from '../components/ActivityCard';
@@ -22,8 +23,9 @@ export default function ActivityDetail() {
   if (activity === undefined) return null; // chargement
   if (activity === null || !activity) {
     return (
-      <div className="pt-10 text-center">
-        <p className="font-medium">Séance introuvable.</p>
+      <div className="text-center">
+        <AppBar back="/seances" title="Séance" />
+        <p className="pt-6 font-medium">Séance introuvable.</p>
         <button onClick={() => nav('/seances')} className="mt-3 text-accent">Retour aux séances</button>
       </div>
     );
@@ -38,16 +40,11 @@ export default function ActivityDetail() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center gap-3 pt-1">
-        <button onClick={() => (history.length > 1 ? nav(-1) : nav('/seances'))} aria-label="Retour" className="-ml-2 grid size-10 place-items-center rounded-full active:bg-slate-200 dark:active:bg-slate-800">
-          <Icon name="back" className="size-6" />
-        </button>
-        <SportBadge sport={a.sport} />
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold">{activityTitle(a)}</h1>
-          <p className="muted text-sm first-letter:uppercase">{fmtDateLong(a.startTime)} · {fmtTime(a.startTime)}</p>
-        </div>
-      </header>
+      <AppBar
+        back="/seances"
+        title={<span className="flex items-center gap-2"><SportBadge sport={a.sport} className="size-7" />{activityTitle(a)}</span>}
+        subtitle={`${fmtDateLong(a.startTime)} · ${fmtTime(a.startTime)}`}
+      />
 
       <KeyStats a={a} />
 

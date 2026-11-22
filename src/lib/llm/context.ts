@@ -1,7 +1,7 @@
 // Prépare le JSON compact envoyé au LLM. Jamais de données seconde par seconde :
 // uniquement des indicateurs calculés, de taille à peu près constante quel que soit l'historique.
 import type { Activity, RunLap } from '../analysis/types';
-import type { DebriefContent } from '../db';
+import type { DebriefContent, PlannedSession } from '../db';
 import { fmtDuration, fmtPace, LAP_KIND_LABEL, STROKE_LABEL, VARIANT_LABEL } from '../format';
 import { addWeeks, DAY, weekStart } from '../stats';
 
@@ -113,7 +113,7 @@ export function effortBlocks(laps: RunLap[]): string[] {
 const effortLabel = (d: number) => (d === 21097 ? 'semi' : d === 42195 ? 'marathon' : `${d / 1000} km`);
 
 /** Résumé court d'une séance passée comparable. */
-function sessionShort(a: Activity, ref: number, debrief?: DebriefContent) {
+export function sessionShort(a: Activity, ref: number, debrief?: DebriefContent) {
   const common = {
     date: shortDate.format(a.startTime),
     il_y_a_jours: Math.round((ref - a.startTime) / DAY),
@@ -169,10 +169,12 @@ function volume(list: Activity[]) {
   };
 }
 
-/** Statistiques récentes, calculées par rapport à la date de la séance débriefée. */
-export function recentStats(a: Activity, history: Activity[]) {
-  const ref = a.startTime;
-  const past = history.filter((h) => h.startTime <= ref && h.id !== a.id).concat(a);
+/**
+ * Statistiques récentes à une date de référence : la date de la séance débriefée (current),
+ * ou aujourd'hui pour la planification.
+ */
+export function recentStats(ref: number, history: Activity[], current?: Activity) {
+  const past = history.filter((h) => h.startTime <= ref && h.id !== current?.id).concat(current ? [current] : []);
   const w0 = weekStart(ref);
 
   const semaines = [3, 2, 1, 0].map((k) => {
@@ -208,8 +210,8 @@ export function recentStats(a: Activity, history: Activity[]) {
     return { seances: sw.length, allure_moy_100m: fmtPace(pace), swolf_moy: swolfs.length ? Math.round(swolfs.reduce((s, x) => s + x, 0) / swolfs.length) : undefined };
   };
 
-  const lastSame = past.filter((h) => h.sport === a.sport && h.id !== a.id).sort((x, y) => y.startTime - x.startTime)[0];
-  const lastAny = past.filter((h) => h.id !== a.id).sort((x, y) => y.startTime - x.startTime)[0];
+  const lastSame = current ? past.filter((h) => h.sport === current.sport && h.id !== current.id).sort((x, y) => y.startTime - x.startTime)[0] : undefined;
+  const lastAny = past.filter((h) => h.id !== current?.id).sort((x, y) => y.startTime - x.startTime)[0];
   const intense7d = past.filter((h) => h.startTime > ref - 7 * DAY && h.hrZones)
     .reduce((s, h) => s + h.hrZones!.timeInZoneS[3] + h.hrZones!.timeInZoneS[4], 0);
 
@@ -219,9 +221,9 @@ export function recentStats(a: Activity, history: Activity[]) {
     tendance_course_endurance: { '4_dernieres_semaines': runTrend(recent), '4_semaines_avant': runTrend(before) },
     tendance_natation: { '4_dernieres_semaines': swimTrend(recent), '4_semaines_avant': swimTrend(before) },
     jours_depuis_seance_precedente: lastAny ? r1((ref - lastAny.startTime) / DAY) : null,
-    jours_depuis_meme_sport: lastSame ? r1((ref - lastSame.startTime) / DAY) : null,
+    jours_depuis_meme_sport: current ? (lastSame ? r1((ref - lastSame.startTime) / DAY) : null) : undefined,
     minutes_z4_z5_7_derniers_jours: Math.round(intense7d / 60),
-    nb_seances_en_base_avant: past.length - 1,
+    nb_seances_en_base: past.length - (current ? 1 : 0),
   };
 }
 
@@ -231,14 +233,30 @@ export interface DebriefInput {
   carnet_du_coach: string;
   statistiques_recentes: ReturnType<typeof recentStats>;
   seances_comparables: ReturnType<typeof sessionShort>[];
+  seance_prevue?: ReturnType<typeof plannedSummary>;
 }
 
-export function buildDebriefInput(a: Activity, history: Activity[], notebook: string, debriefs: Map<string, DebriefContent>, now = Date.now()): DebriefInput {
+/** Résumé d'une séance prévue (plan validé), pour comparer au réalisé. */
+export function plannedSummary(s: PlannedSession) {
+  return {
+    jour: new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(s.date),
+    sport: s.sport === 'running' ? 'course' : 'natation',
+    type: s.kind,
+    titre: s.title,
+    description: s.description,
+    duree_min: s.durationMin ?? undefined,
+    distance: s.distanceM ? (s.sport === 'running' ? `${km(s.distanceM)} km` : `${Math.round(s.distanceM)} m`) : undefined,
+    intensite: s.intensity || undefined,
+  };
+}
+
+export function buildDebriefInput(a: Activity, history: Activity[], notebook: string, debriefs: Map<string, DebriefContent>, planned: PlannedSession | null = null, now = Date.now()): DebriefInput {
   return {
     date_du_jour: new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full' }).format(now),
     seance: sessionDetail(a),
     carnet_du_coach: notebook,
-    statistiques_recentes: recentStats(a, history),
+    statistiques_recentes: recentStats(a.startTime, history, a),
     seances_comparables: comparableSessions(a, history).map((h) => sessionShort(h, a.startTime, debriefs.get(h.id))),
+    seance_prevue: planned ? plannedSummary(planned) : undefined,
   };
 }

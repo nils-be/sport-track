@@ -42,7 +42,7 @@ export default function DebriefCard({ activityId }: { activityId: string }) {
         )}
 
         {d?.content && (
-          <div className={`space-y-3 ${busy ? 'opacity-50' : ''}`}>
+          <div className={`selectable space-y-3 ${busy ? 'opacity-50' : ''}`}>
             <p className="text-lg font-semibold leading-snug">{d.content.titre}</p>
             <Section title="Ce qui s’est bien passé" items={d.content.bien} tone="good" />
             <Section title="Points d’attention" items={d.content.attention} tone="warn" />

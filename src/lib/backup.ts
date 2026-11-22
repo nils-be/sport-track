@@ -13,6 +13,7 @@ interface BackupFile {
   debriefs: unknown[];
   notebook: unknown[];
   llmCalls: unknown[];
+  plans?: unknown[];
   /** Fichiers FIT d'origine, en base64 (optionnels). */
   fitFiles?: { activityId: string; fileName: string; base64: string }[];
 }
@@ -38,13 +39,13 @@ export async function fitFilesSize(): Promise<number> {
 }
 
 export async function exportBackup(includeFit: boolean): Promise<{ blob: Blob; fileName: string; sessions: number }> {
-  const [settings, activities, streams, debriefs, notebook, llmCalls] = await Promise.all([
+  const [settings, activities, streams, debriefs, notebook, llmCalls, plans] = await Promise.all([
     db.settings.toArray(), db.activities.toArray(), db.streams.toArray(),
-    db.debriefs.toArray(), db.notebook.toArray(), db.llmCalls.toArray(),
+    db.debriefs.toArray(), db.notebook.toArray(), db.llmCalls.toArray(), db.plans.toArray(),
   ]);
   const data: BackupFile = {
     app: 'sport-track', format: FORMAT, exportedAt: new Date().toISOString(),
-    settings, activities, streams, debriefs, notebook, llmCalls,
+    settings, activities, streams, debriefs, notebook, llmCalls, plans,
   };
   if (includeFit) {
     data.fitFiles = (await db.fitFiles.toArray()).map((f) => ({ activityId: f.activityId, fileName: f.fileName, base64: toBase64(f.bytes) }));
@@ -81,7 +82,7 @@ export async function readBackup(file: File): Promise<BackupFile> {
 
 /** Remplace toutes les données (sauf les clés API) par le contenu de la sauvegarde. */
 export async function restoreBackup(data: BackupFile): Promise<void> {
-  const tables = [db.settings, db.activities, db.streams, db.debriefs, db.notebook, db.llmCalls, db.fitFiles];
+  const tables = [db.settings, db.activities, db.streams, db.debriefs, db.notebook, db.llmCalls, db.plans, db.fitFiles];
   await db.transaction('rw', tables, async () => {
     for (const t of tables) await t.clear();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,6 +93,7 @@ export async function restoreBackup(data: BackupFile): Promise<void> {
     await put(db.debriefs, data.debriefs);
     await put(db.notebook, data.notebook);
     await put(db.llmCalls, data.llmCalls);
+    await put(db.plans, data.plans);
     if (data.fitFiles?.length) {
       await db.fitFiles.bulkPut(data.fitFiles.map((f) => ({ activityId: f.activityId, fileName: f.fileName, bytes: fromBase64(f.base64) })));
     }

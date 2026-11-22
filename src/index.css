@@ -37,10 +37,46 @@
 html {
   -webkit-tap-highlight-color: transparent;
   color-scheme: light dark;
+  /* Comportement d'application : pas de rebond, pas de zoom au double-tap, pas de barre de défilement. */
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  scrollbar-width: none;
+  -webkit-text-size-adjust: 100%;
+}
+*,
+*::before,
+*::after {
+  scrollbar-width: none;
+}
+::-webkit-scrollbar {
+  display: none;
 }
 body {
   @apply bg-slate-50 text-slate-900 antialiased dark:bg-[#0b1120] dark:text-slate-100;
   font-variant-numeric: tabular-nums;
+  overscroll-behavior: none;
+  /* L'interface ne se sélectionne pas comme une page web… */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* … sauf les textes qu'on lit ou qu'on copie. */
+.selectable,
+input,
+textarea,
+pre {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* 16 px minimum : évite le zoom automatique à la saisie. */
+input,
+textarea,
+select {
+  font-size: max(16px, 1em);
+}
+button,
+a {
+  -webkit-user-drag: none;
 }
 
 .card {
@@ -48,4 +84,8 @@ body {
 }
 .muted {
   @apply text-slate-500 dark:text-slate-400;
+}
+/* Retour visuel au toucher, à la place des effets de survol. */
+.pressable {
+  @apply transition-transform duration-100 active:scale-[0.98] active:opacity-80;
 }
