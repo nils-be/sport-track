@@ -1,0 +1,64 @@
+import { useLiveQuery } from 'dexie-react-hooks';
+import { useState } from 'react';
+import ActivityCard from '../components/ActivityCard';
+import type { Activity, Sport } from '../lib/analysis/types';
+import { db } from '../lib/db';
+import { fmtMonth } from '../lib/format';
+
+type Filter = 'all' | Sport;
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'Toutes' },
+  { id: 'running', label: 'Course' },
+  { id: 'swimming', label: 'Natation' },
+];
+
+export default function Activities() {
+  const [filter, setFilter] = useState<Filter>(() => {
+    try { return (sessionStorage.getItem('filter') as Filter) ?? 'all'; } catch { return 'all'; }
+  });
+  const list = useLiveQuery(async () => {
+    const all = await db.activities.orderBy('startTime').reverse().toArray();
+    return filter === 'all' ? all : all.filter((a) => a.sport === filter);
+  }, [filter]);
+
+  const choose = (f: Filter) => {
+    setFilter(f);
+    try { sessionStorage.setItem('filter', f); } catch { /* stockage indisponible */ }
+  };
+
+  // Regroupement par mois.
+  const groups: { month: string; items: Activity[] }[] = [];
+  for (const a of list ?? []) {
+    const m = fmtMonth(a.startTime);
+    if (groups.at(-1)?.month !== m) groups.push({ month: m, items: [] });
+    groups.at(-1)!.items.push(a);
+  }
+
+  return (
+    <div className="space-y-4">
+      <h1 className="pt-2 text-2xl font-bold">Séances</h1>
+      <div className="flex gap-2" role="tablist">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            role="tab"
+            aria-selected={filter === f.id}
+            onClick={() => choose(f.id)}
+            className={`h-10 rounded-full px-4 text-sm font-medium transition ${
+              filter === f.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'card'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {list && list.length === 0 && <p className="muted py-8 text-center">Aucune séance.</p>}
+      {groups.map((g) => (
+        <section key={g.month}>
+          <h2 className="muted mb-2 text-sm font-semibold">{g.month} · {g.items.length}</h2>
+          <div className="space-y-2">{g.items.map((a) => <ActivityCard key={a.id} a={a} />)}</div>
+        </section>
+      ))}
+    </div>
+  );
+}

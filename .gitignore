@@ -1,0 +1,15 @@
+# Données personnelles : traces GPS, jamais commitées
+samples/
+*.fit
+*.zip
+
+node_modules/
+dist/
+dev-dist/
+.env
+.env.*
+*.local
+coverage/
+
+# Sauvegardes exportées depuis l'app (contiennent séances et traces GPS)
+sport-track-sauvegarde-*.json

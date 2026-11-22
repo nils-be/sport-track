@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* Palette : neutres ardoise, teal pour l'accent, orange = course, bleu = natation. */
+@theme {
+  --color-accent: #0f766e;
+  --color-accent-soft: #ccfbf1;
+  --color-run: #ea580c;
+  --color-run-soft: #ffedd5;
+  --color-swim: #0284c7;
+  --color-swim-soft: #e0f2fe;
+  --color-z1: #94a3b8;
+  --color-z2: #38bdf8;
+  --color-z3: #22c55e;
+  --color-z4: #f59e0b;
+  --color-z5: #ef4444;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --tt-bg: #ffffff;
+  --tt-border: #e2e8f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tt-bg: #0f172a;
+    --tt-border: #334155;
+    --color-accent: #2dd4bf;
+    --color-accent-soft: #134e4a;
+    --color-run: #fb923c;
+    --color-run-soft: #431407;
+    --color-swim: #38bdf8;
+    --color-swim-soft: #082f49;
+  }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  color-scheme: light dark;
+}
+body {
+  @apply bg-slate-50 text-slate-900 antialiased dark:bg-[#0b1120] dark:text-slate-100;
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  @apply rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900 dark:ring-slate-800;
+}
+.muted {
+  @apply text-slate-500 dark:text-slate-400;
+}

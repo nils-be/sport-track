@@ -1,0 +1,163 @@
+import { useLiveQuery } from 'dexie-react-hooks';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Bar, BarChart, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts';
+import type { Activity, Sport } from '../lib/analysis/types';
+import { db } from '../lib/db';
+import { fmtDate, fmtDuration, fmtDurationShort, fmtKm, fmtMeters, fmtPace } from '../lib/format';
+import { longest, records, volumeOf, weeklyVolumes } from '../lib/stats';
+
+const AXIS = { fontSize: 11, fill: 'currentColor' };
+const tooltip = {
+  contentStyle: { background: 'var(--tt-bg)', border: '1px solid var(--tt-border)', borderRadius: 12, fontSize: 12 },
+  labelStyle: { color: 'inherit', fontWeight: 600 },
+};
+const PERIODS = [{ weeks: 13, label: '3 mois' }, { weeks: 26, label: '6 mois' }, { weeks: 52, label: '1 an' }];
+const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
+
+export default function Progress() {
+  const [sport, setSport] = useState<Sport>(() => { try { return (sessionStorage.getItem('prog-sport') as Sport) ?? 'running'; } catch { return 'running'; } });
+  const [weeks, setWeeks] = useState(13);
+  const all = useLiveQuery(() => db.activities.orderBy('startTime').toArray(), []);
+  const choose = (s: Sport) => { setSport(s); try { sessionStorage.setItem('prog-sport', s); } catch { /* indisponible */ } };
+
+  if (!all) return null;
+  const from = Date.now() - weeks * 7 * 86_400_000;
+  const inPeriod = all.filter((a) => a.sport === sport && a.startTime >= from);
+  const run = sport === 'running';
+  const color = run ? 'var(--color-run)' : 'var(--color-swim)';
+  const tot = volumeOf(inPeriod);
+
+  return (
+    <div className="space-y-4">
+      <h1 className="pt-2 text-2xl font-bold">Progression</h1>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2">
+          {(['running', 'swimming'] as Sport[]).map((s) => (
+            <button key={s} onClick={() => choose(s)}
+              className={`h-10 rounded-full px-4 text-sm font-medium ${sport === s ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'card'}`}>
+              {s === 'running' ? 'Course' : 'Natation'}
+            </button>
+          ))}
+        </div>
+        <div className="flex rounded-lg bg-slate-100 p-0.5 text-sm dark:bg-slate-800">
+          {PERIODS.map((p) => (
+            <button key={p.weeks} onClick={() => setWeeks(p.weeks)}
+              className={`rounded-md px-2.5 py-1.5 ${weeks === p.weeks ? 'bg-white font-medium shadow-sm dark:bg-slate-700' : 'muted'}`}>{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <section className="card grid grid-cols-3 gap-2 p-4 text-center">
+        <div><p className="muted text-xs">Séances</p><p className="text-xl font-semibold">{tot.count}</p></div>
+        <div><p className="muted text-xs">Distance</p><p className="text-xl font-semibold">{run ? fmtKm(tot.distanceM).replace(' km', '') : fmtMeters(tot.distanceM).replace(' m', '')}</p><p className="muted text-xs">{run ? 'km' : 'm'}</p></div>
+        <div><p className="muted text-xs">Temps</p><p className="text-xl font-semibold">{fmtDurationShort(tot.durationS)}</p></div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="mb-2 font-semibold">Volume hebdomadaire</h2>
+        <WeeklyChart acts={all} sport={sport} weeks={weeks} color={color} />
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-semibold">Évolution de l’allure</h2>
+        <p className="muted mb-2 text-xs">
+          {run ? 'Allure moyenne des sorties continues (hors fractionné). Ligne : moyenne glissante sur 4 séances.' : 'Allure moyenne au 100 m (hors repos). Ligne : moyenne glissante sur 4 séances.'}
+        </p>
+        <PaceChart acts={inPeriod} sport={sport} color={color} />
+      </section>
+
+      <Records acts={all} sport={sport} />
+    </div>
+  );
+}
+
+function WeeklyChart({ acts, sport, weeks, color }: { acts: Activity[]; sport: Sport; weeks: number; color: string }) {
+  const data = useMemo(() => weeklyVolumes(acts, sport, weeks).map((w) => ({
+    label: shortDate.format(w.start),
+    v: sport === 'running' ? Math.round(w.distanceM / 100) / 10 : Math.round(w.distanceM),
+    count: w.count,
+    dur: w.durationS,
+  })), [acts, sport, weeks]);
+  const unit = sport === 'running' ? 'km' : 'm';
+  return (
+    <div className="text-slate-500 dark:text-slate-400">
+      <ResponsiveContainer width="100%" height={190}>
+        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.15} />
+          <XAxis dataKey="label" tick={AXIS} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
+          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={44} />
+          <Tooltip {...tooltip} cursor={{ fill: 'currentColor', fillOpacity: 0.08 }}
+            labelFormatter={(l) => `Semaine du ${l}`}
+            formatter={(v, _n, p) => [`${Number(v).toLocaleString('fr-FR')} ${unit} · ${p.payload.count} séance${p.payload.count > 1 ? 's' : ''} · ${fmtDurationShort(p.payload.dur)}`, 'Volume']} />
+          <Bar dataKey="v" fill={color} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function PaceChart({ acts, sport, color }: { acts: Activity[]; sport: Sport; color: string }) {
+  const data = useMemo(() => {
+    const pts = acts
+      .map((a) => ({ t: a.startTime, pace: sport === 'running' ? (a.running?.isInterval ? null : a.running?.avgPaceSPerKm) : a.swimming?.avgPace100S, dist: a.distanceM }))
+      .filter((p): p is { t: number; pace: number; dist: number } => p.pace != null && p.pace > 0);
+    return pts.map((p, i) => {
+      const win = pts.slice(Math.max(0, i - 3), i + 1);
+      return { ...p, trend: win.reduce((s, x) => s + x.pace, 0) / win.length };
+    });
+  }, [acts, sport]);
+
+  if (data.length < 2) return <p className="muted py-6 text-center text-sm">Pas encore assez de séances sur la période.</p>;
+  const paces = data.map((d) => d.pace);
+  const lo = Math.floor((Math.min(...paces) - 10) / 15) * 15, hi = Math.ceil((Math.max(...paces) + 10) / 15) * 15;
+  const unit = sport === 'running' ? '/km' : '/100 m';
+  return (
+    <div className="text-slate-500 dark:text-slate-400">
+      <ResponsiveContainer width="100%" height={200}>
+        <ComposedChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -8 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.15} />
+          <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} tick={AXIS} tickLine={false} tickFormatter={(t: number) => shortDate.format(t)} minTickGap={30} />
+          <YAxis reversed domain={[lo, hi]} tick={AXIS} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => fmtPace(v)} />
+          <Tooltip {...tooltip} labelFormatter={(t) => fmtDate(Number(t))}
+            formatter={(v, n) => [`${fmtPace(Number(v))} ${unit}`, n === 'trend' ? 'Tendance' : 'Séance']} />
+          <Scatter dataKey="pace" fill={color} isAnimationActive={false} />
+          <Line dataKey="trend" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <p className="mt-1 text-center text-[11px]">Plus haut = plus rapide</p>
+    </div>
+  );
+}
+
+const RUN_LABEL: Record<number, string> = { 1000: '1 km', 5000: '5 km', 10000: '10 km', 21097: 'Semi', 42195: 'Marathon' };
+
+function Records({ acts, sport }: { acts: Activity[]; sport: Sport }) {
+  const recs = records(acts, sport);
+  const far = longest(acts, sport);
+  if (!recs.length && !far) return null;
+  const run = sport === 'running';
+  return (
+    <section className="card p-4">
+      <h2 className="font-semibold">Records</h2>
+      <p className="muted mb-3 text-xs">Meilleur temps sur la distance au cours d’une séance (portion la plus rapide), toutes périodes confondues.</p>
+      <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
+        {recs.map((r) => (
+          <Link key={r.distanceM} to={`/seance/${encodeURIComponent(r.activityId)}`} className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
+            <p className="muted text-xs">{run ? RUN_LABEL[r.distanceM] ?? fmtKm(r.distanceM) : `${r.distanceM} m`}</p>
+            <p className="text-lg font-semibold">{fmtDuration(r.durationS)}</p>
+            <p className="muted text-[11px]">{run ? `${fmtPace((r.durationS / r.distanceM) * 1000)}/km` : `${fmtPace((r.durationS / r.distanceM) * 100)}/100 m`} · {fmtDate(r.startTime)}</p>
+          </Link>
+        ))}
+        {far && (
+          <Link to={`/seance/${encodeURIComponent(far.id)}`} className="rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
+            <p className="muted text-xs">Plus longue</p>
+            <p className="text-lg font-semibold">{run ? fmtKm(far.distanceM) : fmtMeters(far.distanceM)}</p>
+            <p className="muted text-[11px]">{fmtDate(far.startTime)}</p>
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
