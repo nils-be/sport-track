@@ -81,41 +81,55 @@ export const PREDICT_TARGETS: Record<Sport, number[]> = {
 };
 
 export interface Effort { distanceM: number; durationS: number }
+export interface DatedEffort extends Effort { startTime: number; activityId: string }
 
-/** Meilleurs efforts (par distance) des séances d'un sport dans [from, to[. */
-export function effortsBetween(acts: Activity[], sport: Sport, from: number, to: number): Effort[] {
-  const out: Effort[] = [];
+/** Tous les meilleurs efforts d'un sport, datés (l'historique complet, pas seulement la période affichée). */
+export function datedEfforts(acts: Activity[], sport: Sport): DatedEffort[] {
+  const out: DatedEffort[] = [];
   for (const a of acts) {
-    if (a.sport !== sport || a.startTime < from || a.startTime >= to) continue;
-    out.push(...((sport === 'running' ? a.running?.bestEfforts : a.swimming?.bestEfforts) ?? []));
+    if (a.sport !== sport) continue;
+    for (const e of (sport === 'running' ? a.running?.bestEfforts : a.swimming?.bestEfforts) ?? []) {
+      out.push({ distanceM: e.distanceM, durationS: e.durationS, startTime: a.startTime, activityId: a.id });
+    }
   }
   return out;
 }
 
 /**
- * Temps prédit sur `target` mètres à partir d'efforts réalisés (formule de Riegel).
- * Seuls les efforts d'au moins 1/5 de la distance visée servent (un 1 km ne prédit pas un marathon) ;
- * à défaut, on prend l'effort le plus long. On garde la meilleure prédiction.
+ * Perte de forme supposée selon l'ancienneté d'un effort : aucune pendant 3 semaines, puis environ
+ * 0,5 % par semaine, plafonnée à 8 %. La prédiction glisse donc de quelques secondes au plus d'un jour
+ * à l'autre, au lieu de sauter quand un bon effort sort d'une fenêtre fixe.
  */
-export function predictTime(efforts: Effort[], target: number): { durationS: number; from: Effort } | null {
+const GRACE_DAYS = 21;
+const DECAY_PER_DAY = 0.005 / 7;
+const MAX_DECAY = 0.08;
+export const agePenalty = (ageDays: number) => Math.min(MAX_DECAY, Math.max(0, ageDays - GRACE_DAYS) * DECAY_PER_DAY);
+
+export interface Prediction { durationS: number; from: DatedEffort; penalty: number }
+
+/**
+ * Temps prédit sur `target` mètres à la date `at` (formule de Riegel sur les efforts antérieurs,
+ * corrigée de leur ancienneté). Seuls les efforts d'au moins 1/5 de la distance visée servent
+ * (un 1 km ne prédit pas un marathon) ; à défaut, on prend l'effort le plus long. On garde la meilleure.
+ */
+export function predictTime(all: DatedEffort[], target: number, at = Date.now()): Prediction | null {
+  const efforts = all.filter((e) => e.startTime <= at);
   if (!efforts.length) return null;
   const usable = efforts.filter((e) => e.distanceM >= target / 5);
   const longest = efforts.reduce((m, e) => (e.distanceM > m.distanceM ? e : m));
-  let best: { durationS: number; from: Effort } | null = null;
+  let best: Prediction | null = null;
   for (const e of usable.length ? usable : [longest]) {
-    const t = e.durationS * (target / e.distanceM) ** RIEGEL_EXPONENT;
-    if (!best || t < best.durationS) best = { durationS: t, from: e };
+    const penalty = agePenalty((at - e.startTime) / DAY);
+    const t = e.durationS * (target / e.distanceM) ** RIEGEL_EXPONENT * (1 + penalty);
+    if (!best || t < best.durationS) best = { durationS: t, from: e, penalty };
   }
   return best;
 }
 
-/** Évolution hebdomadaire de la prédiction (fenêtre glissante de `windowWeeks`, limitée à la période). */
-export function predictionSeries(acts: Activity[], sport: Sport, target: number, weeks: number, windowWeeks = 6, now = Date.now()) {
-  const periodStart = addWeeks(weekStart(now), -(weeks - 1));
+/** Évolution hebdomadaire de la prédiction (évaluée en fin de semaine, ou maintenant pour la semaine en cours). */
+export function predictionSeries(efforts: DatedEffort[], sport: Sport, target: number, weeks: number, now = Date.now()) {
   return weeklyVolumes([], sport, weeks, now).map((w) => {
-    const end = addWeeks(w.start, 1);
-    const from = Math.max(periodStart, addWeeks(end, -windowWeeks));
-    const p = predictTime(effortsBetween(acts, sport, from, end), target);
+    const p = predictTime(efforts, target, Math.min(addWeeks(w.start, 1) - 1, now));
     return { start: w.start, durationS: p ? Math.round(p.durationS) : null };
   });
 }

@@ -13,3 +13,7 @@ coverage/
 .secrets/
 # Sauvegardes exportées depuis l'app (contiennent séances et traces GPS)
 sport-track-sauvegarde-*.json
+
+# Relais Cloudflare : état local et secrets de dev
+.wrangler/
+.dev.vars

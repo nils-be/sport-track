@@ -5,6 +5,7 @@ import { SportBadge } from '../components/ActivityCard';
 import AppBar, { AppBarAction } from '../components/AppBar';
 import Icon from '../components/Icon';
 import Markdown from '../components/Markdown';
+import SyncAction from '../components/SyncAction';
 import { db, getSettings, type ChatMessage } from '../lib/db';
 import { activityTitle, fmtDistance } from '../lib/format';
 import { enqueueDebriefs, useDebriefQueue } from '../lib/llm/queue';
@@ -66,6 +67,7 @@ export default function Coach() {
         title="Coach"
         subtitle={waiting ? 'écrit…' : 'Ton suivi d’entraînement'}
         actions={<>
+          <SyncAction />
           <AppBarAction icon="book" label="Carnet du coach" to="/carnet" />
           <AppBarAction icon="settings" label="Réglages" to="/reglages" />
         </>}

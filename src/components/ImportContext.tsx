@@ -26,36 +26,80 @@ type DebriefPlan = { kind: 'none' } | { kind: 'auto'; count: number } | { kind: 
 interface ImportApi {
   openPicker: () => void;
   importing: boolean;
+  /** Récupère les nouvelles séances sur Garmin Connect (via le relais). */
+  sync: () => void;
+  syncing: boolean;
 }
 
-const Ctx = createContext<ImportApi>({ openPicker: () => {}, importing: false });
+const Ctx = createContext<ImportApi>({ openPicker: () => {}, importing: false, sync: () => {}, syncing: false });
 export const useImport = () => useContext(Ctx);
 
 export function ImportProvider({ children }: { children: ReactNode }) {
   const input = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [results, setResults] = useState<ImportResult[] | null>(null);
+  const [sheetTitle, setSheetTitle] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [plan, setPlan] = useState<DebriefPlan>({ kind: 'none' });
+
+  /** Après un import (fichiers ou synchro) : lieux, puis débrief automatique des nouvelles séances. */
+  const afterImport = useCallback(async (res: ImportResult[]) => {
+    setResults(res);
+    void import('../lib/places').then((m) => m.resolvePlaces());
+    // Débrief automatique, une seule fois, des nouvelles séances.
+    const ids = res.filter((r) => r.status === 'imported' && r.activityId).map((r) => r.activityId!);
+    if (!ids.length) setPlan({ kind: 'none' });
+    else if (!(await hasApiKey((await getSettings()).llm.provider))) setPlan({ kind: 'no-key' });
+    else if (ids.length <= AUTO_DEBRIEF_MAX) { void enqueueDebriefs(ids); setPlan({ kind: 'auto', count: ids.length }); navigate('/'); }
+    else setPlan({ kind: 'ask', ids });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = useCallback(async (files: File[]) => {
     if (!files.length) return;
     setImporting(true);
+    setSheetTitle(null);
+    setSyncError(null);
     try {
       // Chargement différé : le décodeur FIT est lourd, inutile au démarrage.
       const { importFiles } = await import('../lib/import/importFit');
-      const res = await importFiles(files);
-      setResults(res);
-      void import('../lib/places').then((m) => m.resolvePlaces());
-      // Débrief automatique, une seule fois, des nouvelles séances.
-      const ids = res.filter((r) => r.status === 'imported' && r.activityId).map((r) => r.activityId!);
-      if (!ids.length) setPlan({ kind: 'none' });
-      else if (!(await hasApiKey((await getSettings()).llm.provider))) setPlan({ kind: 'no-key' });
-      else if (ids.length <= AUTO_DEBRIEF_MAX) { void enqueueDebriefs(ids); setPlan({ kind: 'auto', count: ids.length }); navigate('/'); }
-      else setPlan({ kind: 'ask', ids });
+      await afterImport(await importFiles(files));
     } finally {
       setImporting(false);
     }
-  }, []);
+  }, [afterImport]);
+
+  const syncingRef = useRef(false);
+  const sync = useCallback(async () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncing(true);
+    setSyncError(null);
+    setProgress('Connexion à Garmin…');
+    try {
+      const { syncGarmin } = await import('../lib/garmin');
+      const res = await syncGarmin(setProgress);
+      if (!res.length) {
+        // Rien de nouveau : simple confirmation, sans feuille à fermer.
+        setToast('Tout est à jour');
+        setTimeout(() => setToast(null), 2000);
+        return;
+      }
+      setSheetTitle(null);
+      await afterImport(res);
+    } catch (e) {
+      setSheetTitle('Synchronisation impossible');
+      setSyncError(e instanceof Error ? e.message : 'Erreur inattendue.');
+      setPlan({ kind: 'none' });
+      setResults([]);
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
+      setProgress(null);
+    }
+  }, [afterImport]);
 
   // Arrivée depuis le menu « Partager » d'Android.
   const location = useLocation();
@@ -69,7 +113,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
   }, [location.search, navigate, run]);
 
   return (
-    <Ctx.Provider value={{ openPicker: () => input.current?.click(), importing }}>
+    <Ctx.Provider value={{ openPicker: () => input.current?.click(), importing, sync: () => void sync(), syncing }}>
       {children}
       {/* Pas d'attribut accept : Android grise parfois les .fit (type MIME inconnu). On valide nous-mêmes. */}
       <input
@@ -91,7 +135,21 @@ export function ImportProvider({ children }: { children: ReactNode }) {
           </div>
         </div>
       )}
-      {results && <ResultsSheet results={results} plan={plan} onPlan={setPlan} onClose={() => setResults(null)} onGoCoach={() => navigate('/')} />}
+      {/* Synchro : discrète, on peut continuer à naviguer pendant ce temps. */}
+      {((syncing && progress) || toast) && (
+        <div className="overlay-in pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50 flex justify-center px-4" role="status">
+          <div className="card flex items-center gap-2.5 rounded-full px-4 py-2 text-sm shadow-lg">
+            {toast
+              ? <Icon name="check" className="size-4 text-green-600 dark:text-green-400" />
+              : <span className="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />}
+            {toast ?? progress}
+          </div>
+        </div>
+      )}
+      {results && (
+        <ResultsSheet results={results} title={sheetTitle} error={syncError} plan={plan} onPlan={setPlan}
+          onClose={() => setResults(null)} onGoCoach={() => navigate('/')} />
+      )}
     </Ctx.Provider>
   );
 }
@@ -145,7 +203,10 @@ function DebriefNotice({ plan, onPlan, onClose, onGoCoach }: { plan: DebriefPlan
   );
 }
 
-function ResultsSheet({ results, plan, onPlan, onClose, onGoCoach }: { results: ImportResult[]; plan: DebriefPlan; onPlan: (p: DebriefPlan) => void; onClose: () => void; onGoCoach: () => void }) {
+function ResultsSheet({ results, title, error, plan, onPlan, onClose, onGoCoach }: {
+  results: ImportResult[]; title: string | null; error: string | null; plan: DebriefPlan;
+  onPlan: (p: DebriefPlan) => void; onClose: () => void; onGoCoach: () => void;
+}) {
   const ok = results.filter((r) => r.status === 'imported').length;
   return (
     <div className="overlay-in fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
@@ -156,8 +217,13 @@ function ResultsSheet({ results, plan, onPlan, onClose, onGoCoach }: { results: 
         aria-label="Résultat de l'import"
       >
         <h2 className="text-lg font-semibold">
-          {ok === 0 ? 'Aucune nouvelle séance' : ok === 1 ? '1 séance importée' : `${ok} séances importées`}
+          {title ?? (ok === 0 ? 'Aucune nouvelle séance' : ok === 1 ? '1 séance importée' : `${ok} séances importées`)}
         </h2>
+        {error && (
+          <p className="mt-2 flex gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+            <Icon name="alert" className="mt-0.5 size-4 shrink-0" />{error}
+          </p>
+        )}
         <ul className="mt-3 space-y-2">
           {results.map((r, i) => {
             const s = STATUS[r.status];

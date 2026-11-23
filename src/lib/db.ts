@@ -17,6 +17,11 @@ export interface AppSettings {
     provider: Provider;
     model: Record<Provider, string>;
   };
+  /** Synchronisation Garmin via le relais Cloudflare (le secret partagé est dans la table secrets). */
+  garmin?: {
+    relayUrl: string;
+    lastSyncAt?: number;
+  };
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -25,9 +30,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llm: { provider: 'claude', model: { ...DEFAULT_MODEL } },
 };
 
-/** Clés API : table à part, jamais exportée dans les sauvegardes. */
+/** Clés API (et secret du relais Garmin) : table à part, jamais exportée dans les sauvegardes. */
 export interface Secret {
-  id: Provider;
+  id: Provider | 'garmin';
   key: string;
 }
 

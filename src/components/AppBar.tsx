@@ -36,11 +36,11 @@ export default function AppBar({ title, subtitle, back, actions }: Props) {
 }
 
 /** Bouton icône rond pour les actions de l'en-tête. */
-export function AppBarAction({ icon, label, onClick, to }: { icon: Parameters<typeof Icon>[0]['name']; label: string; onClick?: () => void; to?: string }) {
+export function AppBarAction({ icon, label, onClick, to, spinning }: { icon: Parameters<typeof Icon>[0]['name']; label: string; onClick?: () => void; to?: string; spinning?: boolean }) {
   const nav = useNavigate();
   return (
-    <button onClick={onClick ?? (() => to && nav(to))} aria-label={label} className="pressable grid size-11 place-items-center rounded-full text-slate-600 dark:text-slate-300">
-      <Icon name={icon} className="size-6" />
+    <button onClick={onClick ?? (() => to && nav(to))} aria-label={label} aria-busy={spinning || undefined} className="pressable grid size-11 place-items-center rounded-full text-slate-600 dark:text-slate-300">
+      <Icon name={icon} className={`size-6 ${spinning ? 'animate-spin' : ''}`} />
     </button>
   );
 }

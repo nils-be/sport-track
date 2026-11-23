@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { blockLabel, effortBlockData, sessionKind } from '../lib/analysis/summary';
 import type { Activity } from '../lib/analysis/types';
-import { fmtDate, fmtDistance, fmtDuration, fmtPace, fmtTime, STROKE_LABEL, VARIANT_LABEL } from '../lib/format';
+import { fmtDate, fmtDistance, fmtDuration, fmtPace, fmtTime, STROKE_LABEL } from '../lib/format';
 import Icon from './Icon';
 import RouteMap from './RouteMap';
 
@@ -35,7 +35,6 @@ export default function ActivityCard({ a }: { a: Activity }) {
     if (a.swimming.poolLengthM) tags.push(`bassin ${a.swimming.poolLengthM} m`);
     if (a.swimming.mainStroke) tags.push(STROKE_LABEL[a.swimming.mainStroke]);
   }
-  if (a.avgHr) tags.push(`FC ${a.avgHr}`);
 
   return (
     <Link to={`/seance/${encodeURIComponent(a.id)}`} className="card pressable block overflow-hidden">
@@ -45,7 +44,7 @@ export default function ActivityCard({ a }: { a: Activity }) {
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold">{sessionKind(a)}{a.place && <span className="muted font-normal"> · {a.place}</span>}</p>
             <p className="muted truncate text-xs first-letter:uppercase">
-              {fmtDate(a.startTime)} · {fmtTime(a.startTime)} · {VARIANT_LABEL[a.variant]}
+              {fmtDate(a.startTime)} · {fmtTime(a.startTime)}
             </p>
           </div>
         </div>

@@ -48,9 +48,7 @@ export function sessionKind(a: Activity): string {
   if (a.variant === 'treadmill') return 'Tapis';
   if (a.variant === 'track') return 'Piste';
   if (a.variant === 'trail') return 'Trail';
-  if (a.distanceM >= 15000 || a.durationS >= 80 * 60) return 'Sortie longue';
-  if (r?.avgPaceSPerKm && a.hrZones && a.hrZones.timeInZoneS[3] + a.hrZones.timeInZoneS[4] > a.durationS * 0.5) return 'Course rapide';
-  return 'Footing';
+  return 'Course à pied';
 }
 
 /** Moment de la journée (« matin », « midi », « soir »). */

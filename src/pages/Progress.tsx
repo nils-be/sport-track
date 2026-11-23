@@ -8,7 +8,7 @@ import { AXIS, ChartReadout, pickCategory, pickNumeric, useChartScrub, usePinchZ
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
 import { fmtDate, fmtDuration, fmtDurationShort, fmtKm, fmtMeters, fmtPace } from '../lib/format';
-import { addWeeks, effortsBetween, longest, predictionSeries, predictTime, PREDICT_TARGETS, records, volumeOf, weeklyVolumes, weekStart } from '../lib/stats';
+import { addWeeks, datedEfforts, longest, predictionSeries, predictTime, PREDICT_TARGETS, records, volumeOf, weeklyVolumes, weekStart } from '../lib/stats';
 
 const PERIODS = [{ weeks: 13, label: '3 mois' }, { weeks: 26, label: '6 mois' }, { weeks: 52, label: '1 an' }];
 const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
@@ -38,7 +38,7 @@ export default function Progress() {
         <Segmented size="sm" options={PERIODS.map((p) => ({ value: p.weeks, label: p.label }))} value={weeks} onChange={setWeeks} />
       </div>
 
-      <Predictions key={`${sport}-${weeks}`} acts={all} sport={sport} weeks={weeks} from={from} color={color} />
+      <Predictions key={sport} acts={all} sport={sport} weeks={weeks} color={color} />
 
       <section className="card p-4">
         <h2 className="font-semibold">Volume par semaine</h2>
@@ -52,12 +52,12 @@ export default function Progress() {
 
 // ───────────────────────────────────────────────────────────── Prédictions
 
-function Predictions({ acts, sport, weeks, from, color }: { acts: Activity[]; sport: Sport; weeks: number; from: number; color: string }) {
+function Predictions({ acts, sport, weeks, color }: { acts: Activity[]; sport: Sport; weeks: number; color: string }) {
   const targets = PREDICT_TARGETS[sport];
   const [target, setTarget] = useState(targets[0]);
-  const efforts = useMemo(() => effortsBetween(acts, sport, from, Infinity), [acts, sport, from]);
+  const efforts = useMemo(() => datedEfforts(acts, sport), [acts, sport]);
   const current = targets.map((d) => ({ d, p: predictTime(efforts, d) }));
-  const series = useMemo(() => predictionSeries(acts, sport, target, weeks).map((w) => ({ ...w, x: w.start })), [acts, sport, target, weeks]);
+  const series = useMemo(() => predictionSeries(efforts, sport, target, weeks).map((w) => ({ ...w, x: w.start })), [efforts, sport, target, weeks]);
   const firstVal = series.find((s) => s.durationS != null)?.durationS ?? null;
   const sel = current.find((c) => c.d === target)?.p ?? null;
   const delta = sel && firstVal != null ? Math.round(sel.durationS - firstVal) : null;
@@ -66,7 +66,7 @@ function Predictions({ acts, sport, weeks, from, color }: { acts: Activity[]; sp
     return (
       <section className="card p-4">
         <h2 className="font-semibold">Prédictions</h2>
-        <p className="muted mt-1 text-sm">Pas encore de meilleurs efforts sur la période pour estimer tes temps.</p>
+        <p className="muted mt-1 text-sm">Pas encore de meilleurs efforts pour estimer tes temps.</p>
       </section>
     );
   }
@@ -74,7 +74,6 @@ function Predictions({ acts, sport, weeks, from, color }: { acts: Activity[]; sp
     <section className="card p-4">
       <div className="flex items-baseline justify-between">
         <h2 className="font-semibold">Prédictions</h2>
-        <span className="muted text-xs">sur la période</span>
       </div>
       <div className="mt-3 grid grid-cols-4 gap-1.5" data-noswipe>
         {current.map(({ d, p }) => (
@@ -92,16 +91,19 @@ function Predictions({ acts, sport, weeks, from, color }: { acts: Activity[]; sp
             {targetLabel(sport, target)} · {paceOf(sport, target, sel.durationS)}
             {delta != null && delta !== 0 && (
               <span className={delta < 0 ? 'ml-2 font-medium text-green-600 dark:text-green-400' : 'ml-2 font-medium text-amber-600 dark:text-amber-400'}>
-                {delta < 0 ? '▲' : '▼'} {fmtDuration(Math.abs(delta))} depuis le début
+                {delta < 0 ? '▲' : '▼'} {fmtDuration(Math.abs(delta))} sur la période
               </span>
             )}
           </p>
-          <p className="muted mt-0.5 text-xs">D'après ton meilleur {sel.from.distanceM >= 1000 ? `${sel.from.distanceM / 1000} km` : `${sel.from.distanceM} m`} ({fmtDuration(sel.from.durationS)})</p>
+          <p className="muted mt-0.5 text-xs">
+            D'après ton {sel.from.distanceM >= 1000 ? `${sel.from.distanceM / 1000} km` : `${sel.from.distanceM} m`} en {fmtDuration(sel.from.durationS)} du {shortDate.format(sel.from.startTime)}
+            {sel.penalty >= 0.005 && <> (+{(sel.penalty * 100).toFixed(1).replace('.', ',')} % pour l'ancienneté)</>}
+          </p>
           <PredictionChart series={series} sport={sport} target={target} color={color} />
         </div>
       )}
       <p className="muted mt-2 text-[11px] leading-snug">
-        Estimation par la formule de Riegel à partir de tes meilleurs efforts (fenêtre glissante de 6 semaines pour la courbe). Indicatif : elle suppose un entraînement adapté à la distance.
+        Estimation par la formule de Riegel à partir de tes meilleurs efforts. Un effort compte plein pendant 3 semaines, puis perd environ 0,5 % par semaine : la prédiction évolue en douceur, sans chuter parce que tu n'as pas couru depuis quelques jours. Indicatif : elle suppose un entraînement adapté à la distance.
       </p>
     </section>
   );

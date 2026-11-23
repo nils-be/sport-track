@@ -20,6 +20,7 @@ export default function Settings() {
     <div className="space-y-4">
       <AppBar back="/" title="Réglages" />
       <LlmSection s={settings} />
+      <GarminSection s={settings} />
       <ZonesSection s={settings} />
       <DataSection />
     </div>
@@ -135,6 +136,105 @@ function ApiKeyField({ provider, model }: { provider: Provider; model: string })
         {KEY_HELP[provider]} La clé reste uniquement dans ce navigateur, n’est envoyée qu’à {provider === 'claude' ? 'Anthropic' : 'Google'} et n’est jamais incluse dans les sauvegardes.
       </p>
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────── Garmin
+
+const inputCls = 'h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-slate-300 outline-none focus:ring-2 focus:ring-accent dark:bg-slate-900 dark:ring-slate-700';
+
+/** Secret aléatoire (32 caractères) à recopier dans le relais avec « wrangler secret put APP_SECRET ». */
+function randomSecret(): string {
+  const b = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function GarminSection({ s }: { s: AppSettings }) {
+  const stored = useLiveQuery(() => db.secrets.get('garmin'), []);
+  const [url, setUrl] = useState(s.garmin?.relayUrl ?? '');
+  const [secret, setSecret] = useState('');
+  const [show, setShow] = useState(false);
+  const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; msg: string } | null>(null);
+  const configured = !!s.garmin?.relayUrl && !!stored?.key;
+
+  const save = async () => {
+    const relayUrl = url.trim().replace(/\/+$/, '');
+    if (!/^https:\/\/\S+$/.test(relayUrl) && !/^http:\/\/localhost(:\d+)?/.test(relayUrl)) {
+      setStatus({ kind: 'error', msg: 'Adresse invalide : elle doit commencer par https://' });
+      return;
+    }
+    const key = secret.trim() || stored?.key;
+    if (!key) { setStatus({ kind: 'error', msg: 'Renseigne le secret partagé.' }); return; }
+    await saveSettings({ garmin: { ...s.garmin, relayUrl } });
+    if (secret.trim()) await db.secrets.put({ id: 'garmin', key: secret.trim() });
+    setSecret('');
+    setShow(false);
+    setUrl(relayUrl);
+    await test({ relayUrl, secret: key });
+  };
+  const test = async (cfg = s.garmin?.relayUrl && stored?.key ? { relayUrl: s.garmin.relayUrl, secret: stored.key } : null) => {
+    if (!cfg) return;
+    setStatus({ kind: 'busy', msg: 'Test de la connexion…' });
+    const { testRelay } = await import('../lib/garmin');
+    const err = await testRelay(cfg);
+    setStatus(err ? { kind: 'error', msg: err } : { kind: 'ok', msg: 'Connexion à Garmin Connect établie.' });
+  };
+  const remove = async () => {
+    if (!confirm('Déconnecter Garmin sur cet appareil ? (le relais Cloudflare n’est pas supprimé)')) return;
+    await db.secrets.delete('garmin');
+    await saveSettings({ garmin: undefined });
+    setUrl('');
+    setStatus(null);
+  };
+
+  return (
+    <Card title="Garmin Connect" desc="Synchronise tes séances depuis Garmin Connect avec le bouton ⟳ en haut de l’écran.">
+      {configured && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
+          <Icon name="check" className="size-4 text-green-600 dark:text-green-400" />
+          <span className="min-w-0 flex-1">
+            Connecté
+            <span className="muted block truncate text-xs">
+              {s.garmin?.lastSyncAt ? `Dernière synchro : ${new Date(s.garmin.lastSyncAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}` : 'Jamais synchronisé'}
+            </span>
+          </span>
+          <button onClick={() => test()} className="h-9 rounded-lg px-3 font-medium text-accent ring-1 ring-accent/40">Tester</button>
+          <button onClick={remove} className="muted h-9 px-2" aria-label="Déconnecter Garmin"><Icon name="trash" className="size-4" /></button>
+        </div>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-2">
+        <label className="block text-sm">
+          <span className="muted text-xs">Adresse du relais</span>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://sport-track-garmin.<compte>.workers.dev"
+            inputMode="url" autoComplete="off" spellCheck={false} className={`mt-1 ${inputCls}`} />
+        </label>
+        <label className="block text-sm">
+          <span className="muted flex items-center justify-between text-xs">
+            Secret partagé
+            {!stored?.key && <button type="button" onClick={() => { setSecret(randomSecret()); setShow(true); }} className="font-medium text-accent">Générer</button>}
+          </span>
+          <span className="relative mt-1 block">
+            <input type={show ? 'text' : 'password'} value={secret} onChange={(e) => setSecret(e.target.value)}
+              placeholder={stored?.key ? `Enregistré (••••${stored.key.slice(-4)})` : 'Le même que APP_SECRET du relais'}
+              autoComplete="off" spellCheck={false} className={`${inputCls} pr-11 ${secret ? 'font-mono' : ''}`} />
+            <button type="button" onClick={() => setShow(!show)} className="muted absolute top-0 right-0 grid size-11 place-items-center" aria-label={show ? 'Masquer' : 'Afficher'}>
+              <Icon name={show ? 'eyeOff' : 'eye'} className="size-4" />
+            </button>
+          </span>
+        </label>
+        <button type="submit" disabled={!url.trim() || (!secret.trim() && !stored?.key)} className="h-10 rounded-lg bg-accent px-4 text-sm font-medium text-white disabled:opacity-40 dark:text-slate-950">
+          Enregistrer et tester
+        </button>
+      </form>
+      {status && (
+        <p className={`text-sm ${status.kind === 'ok' ? 'text-green-700 dark:text-green-400' : status.kind === 'error' ? 'text-red-700 dark:text-red-400' : 'muted'}`}>{status.msg}</p>
+      )}
+      <p className="muted text-xs leading-relaxed">
+        Garmin n’autorise pas l’appel direct depuis un navigateur : un petit relais Cloudflare (gratuit) détient ta clé API personnelle Garmin
+        et ne transmet que la liste de tes séances de course et de natation et leurs fichiers FIT. Mise en place : README du projet, section
+        « Synchronisation Garmin ». Le secret partagé reste sur cet appareil et n’est jamais inclus dans les sauvegardes.
+      </p>
+    </Card>
   );
 }
 

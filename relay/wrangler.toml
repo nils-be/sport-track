@@ -1,0 +1,13 @@
+# Relais Garmin de Sport Track — voir README.md (section « Synchronisation Garmin »).
+name = "sport-track-garmin"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+# Origines autorisées à appeler le relais (app publiée + serveur de dev), séparées par des virgules.
+ALLOWED_ORIGINS = "https://nils-be.github.io,http://localhost:5173"
+
+# Secrets (jamais dans ce fichier) : à définir avec
+#   npx wrangler secret put GARMIN_API_KEY
+#   npx wrangler secret put APP_SECRET

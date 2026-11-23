@@ -4,6 +4,7 @@ import Segmented from '../components/Segmented';
 import { useImport } from '../components/ImportContext';
 import { useState } from 'react';
 import ActivityCard from '../components/ActivityCard';
+import SyncAction from '../components/SyncAction';
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
 import { fmtKm, fmtMeters, fmtMonth } from '../lib/format';
@@ -49,7 +50,7 @@ export default function Activities() {
 
   return (
     <div className="space-y-4">
-      <AppBar title="Séances" subtitle={weekSummary} actions={<AppBarAction icon="plus" label="Importer des séances" onClick={openPicker} />} />
+      <AppBar title="Séances" subtitle={weekSummary} actions={<><SyncAction /><AppBarAction icon="plus" label="Importer des séances" onClick={openPicker} /></>} />
       <Segmented options={FILTERS.map((f) => ({ value: f.id, label: f.label }))} value={filter} onChange={choose} />
       {list && list.length === 0 && <p className="muted py-8 text-center">Aucune séance.</p>}
       {groups.map((g) => (
