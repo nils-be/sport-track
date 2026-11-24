@@ -3,14 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import AppBar from '../components/AppBar';
-import Segmented from '../components/Segmented';
+import Icon from '../components/Icon';
 import { AXIS, ChartReadout, pickCategory, pickNumeric, useChartScrub, usePinchZoom, Val, ZoomBadge } from '../components/Charts';
 import type { Activity, Sport } from '../lib/analysis/types';
 import { db } from '../lib/db';
 import { fmtDate, fmtDuration, fmtDurationShort, fmtKm, fmtMeters, fmtPace } from '../lib/format';
 import { addWeeks, datedEfforts, longest, predictionSeries, predictTime, PREDICT_TARGETS, records, volumeOf, weeklyVolumes, weekStart } from '../lib/stats';
 
-const PERIODS = [{ weeks: 13, label: '3 mois' }, { weeks: 26, label: '6 mois' }, { weeks: 52, label: '1 an' }];
+const PERIODS = [{ weeks: 13, label: '3 mois', short: '3M' }, { weeks: 26, label: '6 mois', short: '6M' }, { weeks: 52, label: '1 an', short: '1A' }];
 const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 const targetLabel = (sport: Sport, d: number) => (sport === 'swimming' ? `${d} m` : d === 21097 ? 'Semi' : d === 42195 ? 'Marathon' : `${d / 1000} km`);
 /** Allure correspondant à un temps sur une distance : /km (course) ou /100 m (natation). */
@@ -18,7 +18,8 @@ const paceOf = (sport: Sport, d: number, t: number) => (sport === 'running' ? `$
 
 export default function Progress() {
   const [sport, setSport] = useState<Sport>(() => { try { return (sessionStorage.getItem('prog-sport') as Sport) ?? 'running'; } catch { return 'running'; } });
-  const [weeks, setWeeks] = useState(13);
+  const [weeks, setWeeksState] = useState(() => { try { return Number(sessionStorage.getItem('prog-weeks')) || 13; } catch { return 13; } });
+  const setWeeks = (w: number) => { setWeeksState(w); try { sessionStorage.setItem('prog-weeks', String(w)); } catch { /* indisponible */ } };
   const all = useLiveQuery(() => db.activities.orderBy('startTime').toArray(), []);
   const choose = (s: Sport) => { setSport(s); try { sessionStorage.setItem('prog-sport', s); } catch { /* indisponible */ } };
 
@@ -33,9 +34,9 @@ export default function Progress() {
     <div className="space-y-4">
       <AppBar title="Progression" subtitle={`${tot.count} séance${tot.count > 1 ? 's' : ''} · ${run ? fmtKm(tot.distanceM) : fmtMeters(tot.distanceM)} · ${fmtDurationShort(tot.durationS)}`} />
 
-      <div className="space-y-2">
-        <Segmented options={[{ value: 'running' as Sport, label: 'Course' }, { value: 'swimming' as Sport, label: 'Natation' }]} value={sport} onChange={choose} />
-        <Segmented size="sm" options={PERIODS.map((p) => ({ value: p.weeks, label: p.label }))} value={weeks} onChange={setWeeks} />
+      <div className="flex items-center justify-between gap-3" data-noswipe>
+        <SportSwitch value={sport} onChange={choose} />
+        <PeriodTabs value={weeks} onChange={setWeeks} />
       </div>
 
       <Predictions key={sport} acts={all} sport={sport} weeks={weeks} color={color} />
@@ -46,6 +47,54 @@ export default function Progress() {
       </section>
 
       <Records acts={all} sport={sport} />
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────── Sélecteurs
+
+const SPORTS: { value: Sport; label: string; icon: 'run' | 'swim' }[] = [
+  { value: 'running', label: 'Course', icon: 'run' },
+  { value: 'swimming', label: 'Natation', icon: 'swim' },
+];
+
+/** Sport : pastille colorée (couleur du sport) qui glisse sous le choix, icône + libellé. */
+function SportSwitch({ value, onChange }: { value: Sport; onChange: (s: Sport) => void }) {
+  const i = SPORTS.findIndex((s) => s.value === value);
+  return (
+    <div role="tablist" aria-label="Sport" className="relative flex h-10 shrink-0 rounded-full bg-white p-1 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+      <span aria-hidden="true"
+        className={`nav-pill absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/2)] rounded-full ${value === 'running' ? 'bg-run-soft' : 'bg-swim-soft'}`}
+        style={{ transform: `translateX(${i * 100}%)` }} />
+      {SPORTS.map((s) => {
+        const on = s.value === value;
+        return (
+          <button key={s.value} role="tab" aria-selected={on} onClick={() => { if (!on) { navigator.vibrate?.(4); onChange(s.value); } }}
+            className={`relative z-10 flex w-[6.5rem] items-center justify-center gap-1.5 rounded-full text-sm transition-colors duration-200 ${
+              on ? `font-semibold ${s.value === 'running' ? 'text-run' : 'text-swim'}` : 'text-slate-500 dark:text-slate-400'}`}>
+            <Icon name={s.icon} className="size-4" />
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Période : onglets texte compacts, le choix actif est souligné d'un trait. */
+function PeriodTabs({ value, onChange }: { value: number; onChange: (w: number) => void }) {
+  return (
+    <div role="tablist" aria-label="Période" className="flex items-center gap-0.5">
+      {PERIODS.map((p) => {
+        const on = p.weeks === value;
+        return (
+          <button key={p.weeks} role="tab" aria-selected={on} aria-label={p.label} onClick={() => { if (!on) { navigator.vibrate?.(4); onChange(p.weeks); } }}
+            className={`relative h-10 min-w-10 px-2 text-sm transition-colors duration-200 ${on ? 'font-semibold text-slate-900 dark:text-white' : 'muted'}`}>
+            {p.short}
+            <span aria-hidden="true" className={`absolute inset-x-2 bottom-1 h-0.5 rounded-full bg-accent transition-all duration-300 ${on ? 'opacity-100' : 'scale-x-0 opacity-0'}`} />
+          </button>
+        );
+      })}
     </div>
   );
 }

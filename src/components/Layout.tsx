@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ANALYSIS_VERSION } from '../lib/analysis/version';
 import { db } from '../lib/db';
@@ -21,37 +22,92 @@ const NO_SWIPE = '[data-noswipe], textarea, input, select, .snap-x, .recharts-wr
 export default function Layout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  // Sens de l'animation d'entrée : depuis la droite (onglet suivant) ou la gauche (précédent).
-  const [dir, setDir] = useState<'next' | 'prev' | null>(null);
-  const goTab = (i: number) => {
-    const cur = ROOTS.indexOf(pathname);
-    if (i < 0 || i >= TABS.length || i === cur) return;
-    setDir(cur < 0 || i > cur ? 'next' : 'prev');
-    navigate(TABS[i].to);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLSpanElement>(null);
+  /** Vrai pendant le rendu d'un changement d'onglet : l'écran est animé par slideTo, pas par la classe CSS. */
+  const tabNav = useRef(false);
+  const transition = useRef<{ finish: () => void } | null>(null);
+
+  /** Variables du geste, posées sur l'écran et la pastille uniquement. */
+  const setSwipe = (x: number | null, p = 0) => {
+    const page = pageRef.current, pill = pillRef.current;
+    if (x == null) {
+      delete document.body.dataset.swiping;
+      page?.style.removeProperty('--swipe-x');
+      pill?.style.removeProperty('--swipe-p');
+      return;
+    }
+    document.body.dataset.swiping = '1';
+    page?.style.setProperty('--swipe-x', `${x}px`);
+    pill?.style.setProperty('--swipe-p', `${p}`);
+  };
+
+  /**
+   * Change d'onglet comme un carrousel : une copie figée de l'écran actuel sort d'un côté pendant que
+   * le nouvel écran entre de l'autre, collé à elle. `fromDx` : décalage déjà parcouru au doigt.
+   */
+  const slideTo = (target: number, fromDx = 0, speed = 0) => {
+    const cur = ROOTS.indexOf(location.hash.replace(/^#/, '') || '/');
+    if (target < 0 || target >= TABS.length || target === cur) { setSwipe(null); return; }
+    transition.current?.finish();
+    const page = pageRef.current;
+    const w = innerWidth;
+    const forward = cur < 0 || target > cur;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let ghost: HTMLDivElement | null = null;
+    if (page && cur >= 0 && !reduce) {
+      const r = page.getBoundingClientRect();
+      ghost = document.createElement('div');
+      ghost.className = 'swipe-ghost';
+      ghost.setAttribute('aria-hidden', 'true');
+      const copy = page.cloneNode(true) as HTMLElement;
+      copy.removeAttribute('style');
+      Object.assign(copy.style, { left: `${r.left - fromDx}px`, width: `${r.width}px`, top: `${r.top + scrollY}px`, transform: `translateX(${fromDx}px)` });
+      ghost.appendChild(copy);
+      document.body.appendChild(ghost);
+      ghost.scrollTop = scrollY; // les en-têtes collants restent en place dans la copie
+    }
+
+    setSwipe(null);
+    tabNav.current = true;
+    flushSync(() => navigate(TABS[target].to));
+    if (!ghost || !page) return;
+
+    // Durée : proportionnelle au chemin restant, raccourcie si le geste était rapide.
+    const exitTo = forward ? -w : w;
+    const remaining = Math.abs(exitTo - fromDx);
+    let duration = 320 * (remaining / w);
+    if (speed > 0) duration = Math.min(duration, (remaining / speed) * 1.6);
+    duration = Math.max(170, Math.min(320, duration));
+    const opts: KeyframeAnimationOptions = { duration, easing: 'cubic-bezier(0.2, 0.75, 0.25, 1)' };
+    document.body.dataset.swipeAnim = '1';
+    const out = ghost.firstElementChild!.animate([{ transform: `translateX(${fromDx}px)` }, { transform: `translateX(${exitTo}px)` }], opts);
+    const inn = page.animate([{ transform: `translateX(${(forward ? w : -w) + fromDx}px)` }, { transform: 'none' }], opts);
+    const done = () => {
+      ghost!.remove();
+      delete document.body.dataset.swipeAnim;
+      transition.current = null;
+    };
+    transition.current = { finish: () => { out.finish(); inn.finish(); done(); } };
+    inn.onfinish = done;
   };
 
   // Balayage progressif entre onglets : l'écran et la pastille de navigation suivent le doigt.
-  const goTabRef = useRef(goTab);
-  goTabRef.current = goTab;
+  const slideRef = useRef(slideTo);
+  slideRef.current = slideTo;
+  const setSwipeRef = useRef(setSwipe);
+  setSwipeRef.current = setSwipe;
   useEffect(() => {
-    const root = document.documentElement, body = document.body;
-    const setVars = (x: number, p: number) => {
-      root.style.setProperty('--swipe-x', `${x}px`);
-      root.style.setProperty('--swipe-o', `${1 - Math.min(Math.abs(x) / innerWidth, 1) * 0.5}`);
-      root.style.setProperty('--swipe-p', `${p}`);
-    };
-    const clear = () => {
-      delete body.dataset.swiping; delete body.dataset.swipeAnim;
-      root.style.removeProperty('--swipe-x'); root.style.removeProperty('--swipe-o'); root.style.removeProperty('--swipe-p');
-    };
-    let s: { x: number; y: number; t: number; cur: number; lock: 'h' | 'v' | null; dx: number; samples: [number, number][] } | null = null;
-    let animating = false;
+    let s: { x: number; y: number; cur: number; lock: 'h' | 'v' | null; dx: number; samples: [number, number][] } | null = null;
+    let frame = 0;
+    let settling = false;
 
     const onStart = (e: TouchEvent) => {
       const el = e.target as Element | null;
       const cur = ROOTS.indexOf(location.hash.replace(/^#/, '') || '/');
-      s = !animating && e.touches.length === 1 && cur >= 0 && !document.body.dataset.typing && !el?.closest(NO_SWIPE)
-        ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), cur, lock: null, dx: 0, samples: [] } : null;
+      s = !settling && e.touches.length === 1 && cur >= 0 && !document.body.dataset.typing && !el?.closest(NO_SWIPE)
+        ? { x: e.touches[0].clientX, y: e.touches[0].clientY, cur, lock: null, dx: 0, samples: [] } : null;
     };
     const onMove = (e: TouchEvent) => {
       if (!s || e.touches.length !== 1) return;
@@ -60,39 +116,38 @@ export default function Layout() {
         if (Math.hypot(dx, dy) < 10) return;
         s.lock = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
         if (s.lock === 'v') { s = null; return; }
-        body.dataset.swiping = '1';
+        transition.current?.finish();
       }
       e.preventDefault();
       const target = dx < 0 ? s.cur + 1 : s.cur - 1;
       const edge = target < 0 || target >= TABS.length;
       const x = edge ? dx * 0.25 : dx; // résistance élastique au premier / dernier onglet
       s.dx = x;
-      s.samples.push([Date.now(), dx]);
+      s.samples.push([e.timeStamp, dx]);
       if (s.samples.length > 12) s.samples.shift();
-      setVars(x, edge ? 0 : Math.max(-1, Math.min(1, -x / innerWidth)));
+      // Un seul rendu par image, quelle que soit la fréquence des événements tactiles.
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setSwipeRef.current(x, edge ? 0 : Math.max(-1, Math.min(1, -x / innerWidth))));
     };
-    const onEnd = () => {
+    const onEnd = (e: TouchEvent) => {
       if (!s || s.lock !== 'h') { s = null; return; }
+      cancelAnimationFrame(frame);
       const { dx, cur, samples } = s;
       s = null;
       // Vitesse sur les ~100 dernières ms : un geste lancé change d'onglet, un glissement lent relâché non.
-      const now = Date.now();
-      const ref = samples.find(([ts]) => now - ts <= 100) ?? samples[samples.length - 1];
-      const lastX = samples[samples.length - 1]?.[1] ?? 0;
-      const speed = ref ? Math.abs(lastX - ref[1]) / Math.max(now - ref[0], 16) : 0;
+      const ref = samples.find(([ts]) => e.timeStamp - ts <= 100) ?? samples[samples.length - 1];
+      const last = samples[samples.length - 1];
+      const speed = ref && last ? Math.abs(last[1] - ref[1]) / Math.max(last[0] - ref[0], 16) : 0;
       const target = dx < 0 ? cur + 1 : cur - 1;
-      const commit = target >= 0 && target < TABS.length && (Math.abs(dx) > innerWidth * 0.28 || speed > 0.45);
-      animating = true;
-      body.dataset.swipeAnim = '1';
-      requestAnimationFrame(() => {
-        if (commit) setVars(dx < 0 ? -innerWidth : innerWidth, dx < 0 ? 1 : -1);
-        else setVars(0, 0);
-      });
-      setTimeout(() => {
-        if (commit) { navigator.vibrate?.(5); goTabRef.current(target); }
-        // Le nouvel écran entre avec sa propre animation ; on retire le décalage juste après.
-        requestAnimationFrame(() => { clear(); animating = false; });
-      }, 210);
+      const towards = samples.length < 2 || Math.sign(last[1] - (samples[samples.length - 2]?.[1] ?? 0)) !== Math.sign(-dx) || speed < 0.1;
+      const commit = target >= 0 && target < TABS.length && towards && (Math.abs(dx) > innerWidth * 0.28 || speed > 0.4);
+      if (commit) { navigator.vibrate?.(5); slideRef.current(target, dx, speed); return; }
+      // Retour en place, animé.
+      const page = pageRef.current;
+      settling = true;
+      setSwipeRef.current(null);
+      const back = page?.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+      if (back) back.onfinish = () => { settling = false; }; else settling = false;
     };
     document.addEventListener('touchstart', onStart, { passive: true });
     document.addEventListener('touchmove', onMove, { passive: false });
@@ -103,9 +158,11 @@ export default function Layout() {
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
       document.removeEventListener('touchcancel', onEnd);
-      clear();
+      cancelAnimationFrame(frame);
+      setSwipeRef.current(null);
     };
   }, []);
+  useEffect(() => { tabNav.current = false; }, [pathname]);
 
   // Chaque écran s'ouvre en haut de page (le Coach se place lui-même en bas du fil).
   // « instant » annule un défilement animé en cours ; on recommence une fois le contenu chargé.
@@ -135,18 +192,18 @@ export default function Layout() {
       <main className="mx-auto min-h-dvh max-w-2xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
         {/* La clé force l'animation d'entrée à chaque changement d'écran. */}
         {/* Enveloppe déplacée pendant un balayage (transform appliqué seulement pendant le geste). */}
-        <div className="swipe-page">
-          <div key={pathname} className={dir === 'next' ? 'page-from-right' : dir === 'prev' ? 'page-from-left' : 'page-in'}>
+        <div ref={pageRef} className="swipe-page">
+          <div key={pathname} className={tabNav.current ? '' : 'page-in'}>
             <Outlet />
           </div>
         </div>
       </main>
-      <FloatingNav pathname={pathname} onTab={goTab} />
+      <FloatingNav pathname={pathname} onTab={(i) => slideTo(i)} pillRef={pillRef} />
     </ImportProvider>
   );
 }
 
-function FloatingNav({ pathname, onTab }: { pathname: string; onTab: (i: number) => void }) {
+function FloatingNav({ pathname, onTab, pillRef }: { pathname: string; onTab: (i: number) => void; pillRef: RefObject<HTMLSpanElement | null> }) {
   const queue = useDebriefQueue();
   const pendingChat = useLiveQuery(() => db.messages.filter((m) => m.status === 'pending').count(), []);
   const active = TABS.findIndex((t) => t.match(pathname));
@@ -157,6 +214,7 @@ function FloatingNav({ pathname, onTab }: { pathname: string; onTab: (i: number)
       <div className="pointer-events-auto relative flex h-16 w-full max-w-xs items-center rounded-full bg-white/80 p-1.5 shadow-xl shadow-slate-900/10 ring-1 ring-slate-200/80 backdrop-blur-xl dark:bg-slate-900/80 dark:shadow-black/40 dark:ring-slate-700/70">
         {/* Pastille qui glisse sous l'onglet actif. */}
         <span
+          ref={pillRef}
           aria-hidden="true"
           className="nav-pill absolute top-1.5 bottom-1.5 left-1.5 rounded-full bg-accent-soft"
           style={{ width: 'calc((100% - 0.75rem) / 3)', transform: `translateX(calc((${Math.max(active, 0)} + var(--swipe-p, 0)) * 100%))`, opacity: active < 0 ? 0 : 1 }}

@@ -4,7 +4,7 @@ import { debriefToMarkdown, recentConversationLines, upsertDebriefMessage } from
 import { buildDebriefInput } from './context';
 import { estimateCost, type Provider } from './models';
 import { parseDebriefResponse, ParseError, RESPONSE_SCHEMA, SYSTEM_PROMPT } from './prompt';
-import { callLlm, LlmError } from './providers';
+import { callLlm, LlmError, retryLabel } from './providers';
 
 const MAX_OUTPUT_TOKENS = 8000;
 
@@ -35,7 +35,7 @@ export async function generateDebrief(activityId: string): Promise<void> {
   const previous = await db.debriefs.get(activityId);
   await db.debriefs.put({ ...previous, activityId, status: 'pending', createdAt: previous?.createdAt ?? Date.now() });
   // Le débrief apparaît dans le fil du coach (un seul message par séance, remplacé si on regénère).
-  await upsertDebriefMessage(activityId, { status: 'pending', error: undefined });
+  await upsertDebriefMessage(activityId, { status: 'pending', error: undefined, progress: undefined });
 
   const [history, done, notebook] = await Promise.all([
     db.activities.toArray(),
@@ -55,6 +55,7 @@ export async function generateDebrief(activityId: string): Promise<void> {
       messages: [{ role: 'user', text: `Voici les données de la séance à débriefer :\n${sentJson}` }],
       schema: RESPONSE_SCHEMA as unknown as Record<string, unknown>,
       maxTokens: MAX_OUTPUT_TOKENS,
+      onRetry: (i) => void upsertDebriefMessage(activityId, { progress: retryLabel(i) }),
     });
     const cost = estimateCost(model, res.inputTokens, res.outputTokens);
     await db.llmCalls.add({ at: Date.now(), provider, model, activityId, kind: 'debrief', ok: true, inputTokens: res.inputTokens, outputTokens: res.outputTokens, costUsd: cost });
@@ -65,7 +66,7 @@ export async function generateDebrief(activityId: string): Promise<void> {
       provider, model, inputTokens: res.inputTokens, outputTokens: res.outputTokens, costUsd: cost, sentJson,
     });
     await upsertDebriefMessage(activityId, {
-      status: 'done', text: debriefToMarkdown(parsed.debrief), error: undefined,
+      status: 'done', text: debriefToMarkdown(parsed.debrief), error: undefined, progress: undefined,
       model, costUsd: cost, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
     });
 
@@ -81,7 +82,7 @@ export async function generateDebrief(activityId: string): Promise<void> {
       await db.llmCalls.add({ at: Date.now(), provider, model, activityId, kind: 'debrief', ok: false, inputTokens: 0, outputTokens: 0, costUsd: 0, error: msg });
     }
     await db.debriefs.put({ ...previous, activityId, status: 'error', createdAt: Date.now(), error: msg, sentJson });
-    await upsertDebriefMessage(activityId, { status: 'error', error: msg });
+    await upsertDebriefMessage(activityId, { status: 'error', error: msg, progress: undefined });
   }
 }
 

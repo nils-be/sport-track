@@ -36,7 +36,7 @@ export default function DebriefCard({ activityId }: { activityId: string }) {
 
         {!busy && d?.status === 'error' && (
           <div className="rounded-xl bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-300">
-            <p>{d.error}</p>
+            <p className="whitespace-pre-line">{d.error}</p>
             {d.error?.includes('Réglages') && <Link to="/reglages" className="mt-1 inline-block font-medium underline">Ouvrir les réglages</Link>}
           </div>
         )}

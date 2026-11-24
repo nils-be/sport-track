@@ -148,11 +148,11 @@ function CoachMessage({ m }: { m: ChatMessage }) {
   return (
     <CoachBubble>
       {m.kind === 'debrief' && m.activityId && <SessionChip activityId={m.activityId} />}
-      {m.status === 'pending' && !m.text && <TypingDots label={m.kind === 'debrief' ? 'J’analyse ta séance…' : undefined} />}
+      {m.status === 'pending' && !m.text && <TypingDots label={m.progress ?? (m.kind === 'debrief' ? 'J’analyse ta séance…' : undefined)} />}
       {m.text && <div className={m.status === 'pending' ? 'opacity-50' : ''}><Markdown text={m.text} /></div>}
       {m.status === 'error' && (
         <div className="mt-1 space-y-2">
-          <p className="text-sm text-red-700 dark:text-red-400">{m.error}</p>
+          <ErrorText text={m.error ?? 'Erreur inattendue.'} />
           <div className="flex gap-2">
             <button onClick={retry} className="pressable h-9 rounded-lg px-3 text-sm font-medium text-accent ring-1 ring-accent/40">Réessayer</button>
             {m.error?.includes('Réglages') && <Link to="/reglages" className="pressable flex h-9 items-center rounded-lg px-3 text-sm font-medium text-accent">Réglages</Link>}
@@ -161,6 +161,20 @@ function CoachMessage({ m }: { m: ChatMessage }) {
       )}
       {m.status === 'done' && <p className="muted mt-1.5 text-right text-[11px]">{timeFmt.format(m.at)}</p>}
     </CoachBubble>
+  );
+}
+
+/** Erreur : la première ligne résume, la suite (code et message du service) s'affiche en détail. */
+function ErrorText({ text }: { text: string }) {
+  const [head, ...rest] = text.split('\n');
+  return (
+    <div className="flex gap-2 rounded-xl bg-red-50 p-2.5 dark:bg-red-950/40">
+      <Icon name="alert" className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />
+      <div className="min-w-0 text-sm">
+        <p className="font-medium text-red-700 dark:text-red-300">{head}</p>
+        {rest.map((l) => <p key={l} className="selectable mt-0.5 text-xs break-words text-red-700/75 dark:text-red-300/75">{l}</p>)}
+      </div>
+    </div>
   );
 }
 

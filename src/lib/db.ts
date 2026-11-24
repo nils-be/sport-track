@@ -84,6 +84,8 @@ export interface ChatMessage {
   attachmentErrors?: string[];
   status: 'done' | 'pending' | 'error';
   error?: string;
+  /** Pendant l'attente : relance automatique en cours (service surchargé…). */
+  progress?: string;
   model?: string;
   costUsd?: number;
   inputTokens?: number;

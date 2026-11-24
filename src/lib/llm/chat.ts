@@ -6,7 +6,7 @@ import { messageForLlm, recentMessages } from '../thread';
 import { recentStats, sessionDetail, sessionShort } from './context';
 import { getApiKey } from './debrief';
 import { estimateCost } from './models';
-import { callLlm, LlmError, type LlmTurn } from './providers';
+import { callLlm, LlmError, retryLabel, type LlmTurn } from './providers';
 
 const MAX_HISTORY = 30;
 const HISTORY_BUDGET_CHARS = 16_000;
@@ -119,7 +119,7 @@ export async function sendChatMessage(text: string, files: File[] = []): Promise
 
 /** Relance une réponse du coach en erreur. */
 export async function retryChat(coachId: number): Promise<void> {
-  await db.messages.update(coachId, { status: 'pending', error: undefined });
+  await db.messages.update(coachId, { status: 'pending', error: undefined, progress: undefined });
   await respond(coachId);
 }
 
@@ -143,11 +143,12 @@ async function respond(coachId: number): Promise<void> {
       { role: 'user', text: `Contexte préparé par l'application (à jour, ne pas recopier) :\n${JSON.stringify(context)}` },
       ...(await conversationTurns(placeholder.at)),
     ];
-    const res = await callLlm({ provider, model, apiKey, system: CHAT_SYSTEM_PROMPT, messages: turns, schema: CHAT_SCHEMA, maxTokens: 6000 });
+    const res = await callLlm({ provider, model, apiKey, system: CHAT_SYSTEM_PROMPT, messages: turns, schema: CHAT_SCHEMA, maxTokens: 6000,
+      onRetry: (i) => void db.messages.update(coachId, { progress: retryLabel(i) }) });
     const cost = estimateCost(model, res.inputTokens, res.outputTokens);
     await db.llmCalls.add({ at: Date.now(), provider, model, kind: 'chat', ok: true, inputTokens: res.inputTokens, outputTokens: res.outputTokens, costUsd: cost });
     const parsed = parseChatResponse(res.text);
-    await db.messages.update(coachId, { status: 'done', text: parsed.reponse, error: undefined, model, costUsd: cost, inputTokens: res.inputTokens, outputTokens: res.outputTokens });
+    await db.messages.update(coachId, { status: 'done', text: parsed.reponse, error: undefined, progress: undefined, model, costUsd: cost, inputTokens: res.inputTokens, outputTokens: res.outputTokens });
 
     // Carnet : seulement si le coach l'a mis à jour et que l'utilisateur ne l'a pas modifié entre-temps.
     const latest = await currentNotebook();
@@ -159,6 +160,6 @@ async function respond(coachId: number): Promise<void> {
     if (!msg.startsWith('Aucune clé')) {
       await db.llmCalls.add({ at: Date.now(), provider, model, kind: 'chat', ok: false, inputTokens: 0, outputTokens: 0, costUsd: 0, error: msg });
     }
-    await db.messages.update(coachId, { status: 'error', error: msg });
+    await db.messages.update(coachId, { status: 'error', error: msg, progress: undefined });
   }
 }

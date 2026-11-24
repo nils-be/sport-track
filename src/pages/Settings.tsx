@@ -130,7 +130,7 @@ function ApiKeyField({ provider, model }: { provider: Provider; model: string })
         </button>
       </form>
       {status && (
-        <p className={`text-sm ${status.kind === 'ok' ? 'text-green-700 dark:text-green-400' : status.kind === 'error' ? 'text-red-700 dark:text-red-400' : 'muted'}`}>{status.msg}</p>
+        <p className={`text-sm whitespace-pre-line ${status.kind === 'ok' ? 'text-green-700 dark:text-green-400' : status.kind === 'error' ? 'text-red-700 dark:text-red-400' : 'muted'}`}>{status.msg}</p>
       )}
       <p className="muted text-xs leading-relaxed">
         {KEY_HELP[provider]} La clé reste uniquement dans ce navigateur, n’est envoyée qu’à {provider === 'claude' ? 'Anthropic' : 'Google'} et n’est jamais incluse dans les sauvegardes.
@@ -227,7 +227,7 @@ function GarminSection({ s }: { s: AppSettings }) {
         </button>
       </form>
       {status && (
-        <p className={`text-sm ${status.kind === 'ok' ? 'text-green-700 dark:text-green-400' : status.kind === 'error' ? 'text-red-700 dark:text-red-400' : 'muted'}`}>{status.msg}</p>
+        <p className={`text-sm whitespace-pre-line ${status.kind === 'ok' ? 'text-green-700 dark:text-green-400' : status.kind === 'error' ? 'text-red-700 dark:text-red-400' : 'muted'}`}>{status.msg}</p>
       )}
       <p className="muted text-xs leading-relaxed">
         Garmin n’autorise pas l’appel direct depuis un navigateur : un petit relais Cloudflare (gratuit) détient ta clé API personnelle Garmin
