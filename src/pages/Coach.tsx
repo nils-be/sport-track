@@ -22,11 +22,13 @@ function dayLabel(t: number): string {
   return dayFmt.format(t);
 }
 
-/** Le fil n'est affiché que sur la route « / » : ailleurs, on ne touche jamais au défilement. */
+/** Le fil défile dans sa propre zone (onglet du carrousel, voir Layout). */
 const onCoach = () => location.hash.replace(/^#/, '').split('?')[0] === '/coach';
-const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160;
+const scroller = () => document.querySelector<HTMLElement>('[data-tab-scroller="/coach"]');
+const atBottom = () => { const s = scroller(); return !s || s.clientHeight + s.scrollTop >= s.scrollHeight - 160; };
+/** En bas du fil : en douceur si on le regarde, instantanément sinon (on le retrouvera en bas). */
 const scrollToBottom = (smooth = true) =>
-  requestAnimationFrame(() => { if (onCoach()) window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); });
+  requestAnimationFrame(() => { const s = scroller(); s?.scrollTo({ top: s.scrollHeight, behavior: smooth && onCoach() ? 'smooth' : 'auto' }); });
 
 /** Masque la barre de navigation pendant la saisie (clavier ouvert), en restant en bas du fil si on y était. */
 const setTyping = (on: boolean) => {

@@ -34,7 +34,7 @@ export default function Progress() {
     <div className="space-y-4">
       <AppBar title="Progression" subtitle={`${tot.count} séance${tot.count > 1 ? 's' : ''} · ${run ? fmtKm(tot.distanceM) : fmtMeters(tot.distanceM)} · ${fmtDurationShort(tot.durationS)}`} />
 
-      <div className="flex items-center justify-between gap-3" data-noswipe>
+      <div className="flex items-center gap-2" data-noswipe>
         <SportSwitch value={sport} onChange={choose} />
         <PeriodSelect value={weeks} onChange={setWeeks} />
       </div>
@@ -62,7 +62,7 @@ const SPORTS: { value: Sport; label: string; icon: 'run' | 'swim' }[] = [
 function SportSwitch({ value, onChange }: { value: Sport; onChange: (s: Sport) => void }) {
   const i = SPORTS.findIndex((s) => s.value === value);
   return (
-    <div role="tablist" aria-label="Sport" className="relative flex h-10 shrink-0 rounded-full bg-white p-1 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+    <div role="tablist" aria-label="Sport" className="relative flex h-10 min-w-0 max-w-[15rem] flex-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
       <span aria-hidden="true"
         className={`nav-pill absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/2)] rounded-full ${value === 'running' ? 'bg-run-soft' : 'bg-swim-soft'}`}
         style={{ transform: `translateX(${i * 100}%)` }} />
@@ -70,10 +70,10 @@ function SportSwitch({ value, onChange }: { value: Sport; onChange: (s: Sport) =
         const on = s.value === value;
         return (
           <button key={s.value} role="tab" aria-selected={on} onClick={() => { if (!on) { navigator.vibrate?.(4); onChange(s.value); } }}
-            className={`relative z-10 flex w-[6.5rem] items-center justify-center gap-1.5 rounded-full text-sm transition-colors duration-200 ${
+            className={`relative z-10 flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-1 text-sm whitespace-nowrap transition-colors duration-200 ${
               on ? `font-semibold ${s.value === 'running' ? 'text-run' : 'text-swim'}` : 'text-slate-500 dark:text-slate-400'}`}>
-            <Icon name={s.icon} className="size-4" />
-            {s.label}
+            <Icon name={s.icon} className="size-4 shrink-0" />
+            <span className="truncate">{s.label}</span>
           </button>
         );
       })}
@@ -95,12 +95,12 @@ function PeriodSelect({ value, onChange }: { value: number; onChange: (w: number
     return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', esc); };
   }, [open]);
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative ml-auto shrink-0">
       <button onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Période : ${current.label}`}
-        className="pressable flex h-10 items-center gap-1.5 rounded-full bg-white pr-3 pl-3.5 text-sm font-medium shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
-        <Icon name="calendar" className="muted size-4" />
+        className="pressable flex h-10 items-center gap-1.5 rounded-full bg-white pr-2.5 pl-3 text-sm leading-none font-medium whitespace-nowrap shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+        <Icon name="calendar" className="muted hidden size-4 shrink-0 min-[375px]:block" />
         {current.label}
-        <Icon name="down" className={`muted size-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <Icon name="down" className={`muted size-4 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <ul role="listbox" aria-label="Période"

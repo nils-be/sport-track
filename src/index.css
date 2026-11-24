@@ -22,9 +22,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  html {
-    background-color: #0b1120;
-  }
   :root {
     --tt-bg: #0f172a;
     --tt-border: #334155;
@@ -47,6 +44,10 @@ html {
   touch-action: manipulation;
   scrollbar-width: none;
   -webkit-text-size-adjust: 100%;
+}
+/* Après la règle claire, sinon elle l'emporte (les onglets sont des calques : c'est ce fond qu'on voit). */
+@media (prefers-color-scheme: dark) {
+  html { background-color: #0b1120; }
 }
 *,
 *::before,
@@ -180,17 +181,18 @@ body[data-typing] .composer { bottom: calc(env(safe-area-inset-bottom) + 0.5rem)
 .page-from-right { animation: from-right 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 .page-from-left { animation: from-left 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 
-/* Carrousel des onglets (voir Layout) : l'onglet actif est dans le flux, les autres attendent hors champ. */
-.tab-page.tab-idle { position: fixed; inset: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
-/* Pendant un geste : les écrans concernés deviennent des fenêtres fixes, déplacées en transform uniquement. */
-.tab-page[data-live] {
-  position: fixed; inset: 0; overflow: hidden; visibility: visible;
+/* Carrousel des onglets (voir Layout) : calques plein écran posés côte à côte, toujours dessinés. */
+.tab-page {
+  position: fixed; inset: 0; z-index: 0;
   will-change: transform; backface-visibility: hidden; contain: layout paint;
 }
-/* Flou d'arrière-plan des en-têtes coupé pendant le geste (coûteux à recalculer à chaque image). */
-.tab-page[data-live] header { backdrop-filter: none; }
-body[data-swiping]:not([data-swipe-anim]) .nav-pill { transition: none; }
-body[data-swiping] { overflow: hidden; overscroll-behavior: none; }
+/* Sur un autre écran (détail, réglages…), les onglets attendent sans être affichés. */
+.tab-page[data-off] { visibility: hidden; }
+.tab-scroll {
+  position: absolute; inset: 0;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+}
+body[data-swiping] .tab-page header { backdrop-filter: none; }
 
 /* Menu déroulant : apparaît depuis son bouton. */
 @keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.97); } to { opacity: 1; transform: none; } }
