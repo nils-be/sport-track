@@ -53,7 +53,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
     const ids = res.filter((r) => r.status === 'imported' && r.activityId).map((r) => r.activityId!);
     if (!ids.length) setPlan({ kind: 'none' });
     else if (!(await hasApiKey((await getSettings()).llm.provider))) setPlan({ kind: 'no-key' });
-    else if (ids.length <= AUTO_DEBRIEF_MAX) { void enqueueDebriefs(ids); setPlan({ kind: 'auto', count: ids.length }); navigate('/'); }
+    else if (ids.length <= AUTO_DEBRIEF_MAX) { void enqueueDebriefs(ids); setPlan({ kind: 'auto', count: ids.length }); navigate('/coach'); }
     else setPlan({ kind: 'ask', ids });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -108,7 +108,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (sharedHandled.current || !new URLSearchParams(location.search).has('partage')) return;
     sharedHandled.current = true;
-    navigate('/', { replace: true });
+    navigate('/seances', { replace: true });
     void takeSharedFiles().then(run);
   }, [location.search, navigate, run]);
 
@@ -148,7 +148,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       )}
       {results && (
         <ResultsSheet results={results} title={sheetTitle} error={syncError} plan={plan} onPlan={setPlan}
-          onClose={() => setResults(null)} onGoCoach={() => navigate('/')} />
+          onClose={() => setResults(null)} onGoCoach={() => navigate('/coach')} />
       )}
     </Ctx.Provider>
   );

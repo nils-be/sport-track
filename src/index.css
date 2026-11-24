@@ -180,16 +180,18 @@ body[data-typing] .composer { bottom: calc(env(safe-area-inset-bottom) + 0.5rem)
 .page-from-right { animation: from-right 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 .page-from-left { animation: from-left 280ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 
-/* Balayage progressif entre onglets : variables posées sur l'écran et la pastille seulement
-   (jamais sur la racine, ce qui recalculerait les styles de toute la page à chaque mouvement). */
-body[data-swiping] .swipe-page {
-  transform: translateX(var(--swipe-x, 0px));
-  will-change: transform;
+/* Carrousel des onglets (voir Layout) : l'onglet actif est dans le flux, les autres attendent hors champ. */
+.tab-page.tab-idle { position: fixed; inset: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+/* Pendant un geste : les écrans concernés deviennent des fenêtres fixes, déplacées en transform uniquement. */
+.tab-page[data-live] {
+  position: fixed; inset: 0; overflow: hidden; visibility: visible;
+  will-change: transform; backface-visibility: hidden; contain: layout paint;
 }
-body[data-swiping] .nav-pill { transition: none; }
-body[data-swiping], body[data-swipe-anim] { overflow-x: clip; }
-/* Copie figée de l'écran qu'on quitte, qui sort pendant que le nouveau entre. */
-.swipe-ghost { position: fixed; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; }
-.swipe-ghost > * { position: absolute; }
-/* La copie ne doit pas rejouer les animations d'entrée de ses éléments (messages, pages…). */
-.swipe-ghost *, .swipe-ghost *::before, .swipe-ghost *::after { animation: none !important; transition: none !important; }
+/* Flou d'arrière-plan des en-têtes coupé pendant le geste (coûteux à recalculer à chaque image). */
+.tab-page[data-live] header { backdrop-filter: none; }
+body[data-swiping]:not([data-swipe-anim]) .nav-pill { transition: none; }
+body[data-swiping] { overflow: hidden; overscroll-behavior: none; }
+
+/* Menu déroulant : apparaît depuis son bouton. */
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.97); } to { opacity: 1; transform: none; } }
+.menu-in { animation: menu-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top right; }

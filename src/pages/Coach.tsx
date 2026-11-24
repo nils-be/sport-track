@@ -23,7 +23,7 @@ function dayLabel(t: number): string {
 }
 
 /** Le fil n'est affiché que sur la route « / » : ailleurs, on ne touche jamais au défilement. */
-const onCoach = () => (location.hash.replace(/^#/, '') || '/') === '/';
+const onCoach = () => location.hash.replace(/^#/, '').split('?')[0] === '/coach';
 const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160;
 const scrollToBottom = (smooth = true) =>
   requestAnimationFrame(() => { if (onCoach()) window.scrollTo({ top: document.documentElement.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }); });

@@ -46,6 +46,6 @@ self.addEventListener('fetch', (event) => {
       // Stockage temporaire : l'application les lit puis vide ce cache.
       await cache.put(`shared/${Date.now()}-${i++}`, new Response(f, { headers: { 'x-file-name': encodeURIComponent(f.name) } }));
     }
-    return Response.redirect(new URL('./#/?partage=1', self.registration.scope).href, 303);
+    return Response.redirect(new URL('./#/seances?partage=1', self.registration.scope).href, 303);
   })());
 });

@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import AppBar from '../components/AppBar';
@@ -10,7 +10,7 @@ import { db } from '../lib/db';
 import { fmtDate, fmtDuration, fmtDurationShort, fmtKm, fmtMeters, fmtPace } from '../lib/format';
 import { addWeeks, datedEfforts, longest, predictionSeries, predictTime, PREDICT_TARGETS, records, volumeOf, weeklyVolumes, weekStart } from '../lib/stats';
 
-const PERIODS = [{ weeks: 13, label: '3 mois', short: '3M' }, { weeks: 26, label: '6 mois', short: '6M' }, { weeks: 52, label: '1 an', short: '1A' }];
+const PERIODS = [{ weeks: 13, label: '3 mois' }, { weeks: 26, label: '6 mois' }, { weeks: 52, label: '1 an' }];
 const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 const targetLabel = (sport: Sport, d: number) => (sport === 'swimming' ? `${d} m` : d === 21097 ? 'Semi' : d === 42195 ? 'Marathon' : `${d / 1000} km`);
 /** Allure correspondant à un temps sur une distance : /km (course) ou /100 m (natation). */
@@ -36,7 +36,7 @@ export default function Progress() {
 
       <div className="flex items-center justify-between gap-3" data-noswipe>
         <SportSwitch value={sport} onChange={choose} />
-        <PeriodTabs value={weeks} onChange={setWeeks} />
+        <PeriodSelect value={weeks} onChange={setWeeks} />
       </div>
 
       <Predictions key={sport} acts={all} sport={sport} weeks={weeks} color={color} />
@@ -81,20 +81,44 @@ function SportSwitch({ value, onChange }: { value: Sport; onChange: (s: Sport) =
   );
 }
 
-/** Période : onglets texte compacts, le choix actif est souligné d'un trait. */
-function PeriodTabs({ value, onChange }: { value: number; onChange: (w: number) => void }) {
+/** Période : un seul bouton qui ouvre un petit menu déroulant. */
+function PeriodSelect({ value, onChange }: { value: number; onChange: (w: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = PERIODS.find((p) => p.weeks === value) ?? PERIODS[0];
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
   return (
-    <div role="tablist" aria-label="Période" className="flex items-center gap-0.5">
-      {PERIODS.map((p) => {
-        const on = p.weeks === value;
-        return (
-          <button key={p.weeks} role="tab" aria-selected={on} aria-label={p.label} onClick={() => { if (!on) { navigator.vibrate?.(4); onChange(p.weeks); } }}
-            className={`relative h-10 min-w-10 px-2 text-sm transition-colors duration-200 ${on ? 'font-semibold text-slate-900 dark:text-white' : 'muted'}`}>
-            {p.short}
-            <span aria-hidden="true" className={`absolute inset-x-2 bottom-1 h-0.5 rounded-full bg-accent transition-all duration-300 ${on ? 'opacity-100' : 'scale-x-0 opacity-0'}`} />
-          </button>
-        );
-      })}
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Période : ${current.label}`}
+        className="pressable flex h-10 items-center gap-1.5 rounded-full bg-white pr-3 pl-3.5 text-sm font-medium shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+        <Icon name="calendar" className="muted size-4" />
+        {current.label}
+        <Icon name="down" className={`muted size-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <ul role="listbox" aria-label="Période"
+          className="menu-in absolute top-12 right-0 z-30 w-40 overflow-hidden rounded-2xl bg-white p-1.5 shadow-xl shadow-slate-900/10 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:shadow-black/40 dark:ring-slate-700/70">
+          {PERIODS.map((p) => {
+            const on = p.weeks === value;
+            return (
+              <li key={p.weeks} role="option" aria-selected={on}>
+                <button onClick={() => { setOpen(false); if (!on) { navigator.vibrate?.(4); onChange(p.weeks); } }}
+                  className={`flex h-11 w-full items-center justify-between rounded-xl px-3 text-sm ${on ? 'bg-accent-soft/60 font-semibold text-accent dark:bg-accent-soft/30' : 'active:bg-slate-100 dark:active:bg-slate-800'}`}>
+                  {p.label}
+                  {on && <Icon name="check" className="size-4" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

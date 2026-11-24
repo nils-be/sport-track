@@ -46,7 +46,7 @@ export default function Notebook() {
 
   return (
     <div className="space-y-3">
-      <AppBar back="/" title="Carnet du coach" subtitle={`${filled}/${NOTEBOOK_SECTIONS.length} rubriques remplies · ${wordCount(text)} / ${MAX_WORDS} mots`}
+      <AppBar back="/coach" title="Carnet du coach" subtitle={`${filled}/${NOTEBOOK_SECTIONS.length} rubriques remplies · ${wordCount(text)} / ${MAX_WORDS} mots`}
         actions={versions.length > 1 ? <AppBarAction icon="history" label="Historique des versions" onClick={() => setHistory(true)} /> : undefined} />
       <p className="muted -mt-2 text-sm">
         Ce que le coach sait de toi pour cadrer tes séances. Il le complète au fil des débriefs et de vos échanges ; tu peux modifier chaque rubrique.

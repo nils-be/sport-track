@@ -18,7 +18,7 @@ export default function Settings() {
   if (!settings) return null;
   return (
     <div className="space-y-4">
-      <AppBar back="/" title="Réglages" />
+      <AppBar back="/coach" title="Réglages" />
       <LlmSection s={settings} />
       <GarminSection s={settings} />
       <ZonesSection s={settings} />
